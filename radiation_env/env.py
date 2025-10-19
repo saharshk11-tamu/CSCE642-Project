@@ -64,7 +64,7 @@ class RadiationEnv(gym.Env):
 
         truncated = self.step_count >= self.max_steps
         obs = self._noisy_observation()
-        return obs, reward, terminated, truncated, {}
+        return obs, reward, terminated, truncated
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -81,4 +81,4 @@ class RadiationEnv(gym.Env):
         grid[gy, gx] = 'G'
         ax, ay = map(int, self.agent_pos)
         grid[ay, ax] = 'A'
-        print("\n".join([" ".join(row) for row in grid[::-1]]))
+        print("\nGrid\n" + "\n".join([" ".join(row) for row in grid[::-1]]))
