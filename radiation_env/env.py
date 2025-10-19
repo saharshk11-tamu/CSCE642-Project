@@ -11,6 +11,7 @@ class RadiationEnv(gym.Env):
         self.grid_size = GRID_SIZE
         self.goal_pos = np.array(GOAL_POS)
         self.radiation_zones = np.array(RADIATION_ZONES)
+        self.radiation_strengths = np.array(RADIATION_STRENGTHS)*GAMMA_FACTORS['Co-60']
         self.max_steps = MAX_STEPS
         self.step_count = 0
 
@@ -29,7 +30,8 @@ class RadiationEnv(gym.Env):
     def _radiation_at(self, pos):
         """Compute radiation intensity based on proximity to radiation zones"""
         dist = np.linalg.norm(self.radiation_zones - pos, axis=1)
-        return np.sum(np.exp(-dist)) * RADIATION_STRENGTH
+        #return np.sum(np.exp(-dist)) * RADIATION_STRENGTH
+        return np.sum(self.radiation_strengths / (dist)**2)
 
     def _noisy_observation(self):
         """Return observation with noise proportional to radiation"""
@@ -85,3 +87,4 @@ class RadiationEnv(gym.Env):
         ax, ay = map(int, self.agent_pos)
         grid[ay, ax] = 'A'
         print("\nGrid\n" + "\n".join([" ".join(row) for row in grid[::-1]]))
+
