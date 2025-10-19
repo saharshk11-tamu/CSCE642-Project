@@ -38,6 +38,9 @@ class RadiationEnv(gym.Env):
         noisy_pos = np.clip(self.agent_pos + noise, 0, self.grid_size - 1)
         distance_to_goal = np.linalg.norm(self.goal_pos - self.agent_pos)
         return np.array([*noisy_pos, radiation, distance_to_goal], dtype=np.float32)
+    
+    def _calc_reward(self, radiation, distance_to_goal):
+        return -0.1 * radiation - 0.05 * distance_to_goal
 
     def step(self, action):
         # Move agent
@@ -55,7 +58,7 @@ class RadiationEnv(gym.Env):
 
         # Reward: encourage goal proximity, penalize radiation
         distance_to_goal = np.linalg.norm(self.goal_pos - self.agent_pos)
-        reward = -0.1 * radiation - 0.05 * distance_to_goal
+        reward = self._calc_reward(radiation, distance_to_goal)
 
         # Bonus for reaching goal
         terminated = np.array_equal(np.round(self.agent_pos), self.goal_pos)
@@ -64,16 +67,13 @@ class RadiationEnv(gym.Env):
 
         truncated = self.step_count >= self.max_steps
         obs = self._noisy_observation()
-        return obs, reward, terminated, truncated
+        return obs, reward, terminated, truncated, {}
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         self.agent_pos = np.array([0.0, 0.0])
         self.step_count = 0
         return self._noisy_observation(), {}
-
-    def compute_optimal_policy(self):
-        pass
     
     def render(self):
         grid = np.zeros((self.grid_size, self.grid_size), dtype=str)
