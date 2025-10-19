@@ -72,6 +72,9 @@ class RadiationEnv(gym.Env):
         self.step_count = 0
         return self._noisy_observation(), {}
 
+    def compute_optimal_policy(self):
+        pass
+    
     def render(self):
         grid = np.zeros((self.grid_size, self.grid_size), dtype=str)
         grid[:] = '.'
