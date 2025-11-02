@@ -154,6 +154,7 @@ class RadiationGridworld(gym.Env):
                 print(row)
             print()
         elif self.render_mode == 'radiation_map':
-            plt.title('Radiation Map')
-            plt.imshow(self._radiation_vals, cmap='hot')
+            plt.title('Gridworld Radiation Map')
+            plt.imshow(np.flip(self._radiation_vals, axis=0), cmap='hot')
+            plt.axis('off')
             plt.savefig(dir if dir is not None else 'radiation_map.png')
