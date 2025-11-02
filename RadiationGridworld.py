@@ -1,10 +1,12 @@
 import numpy as np
 import gymnasium as gym
+import matplotlib.pyplot as plt
 
 class RadiationGridworld(gym.Env):
 
     def __init__(
-            self, size, agent_loc: list[int, int],
+            self, size,
+            agent_loc: list[int, int],
             target_loc: list[int, int],
             wall_locs: list[list[int, int]],
             radiation_locs: list[list[int, int]],
@@ -14,18 +16,20 @@ class RadiationGridworld(gym.Env):
         self.size = size
 
         self._agent_start_location = np.array(agent_loc, dtype=np.int32)
-        
         self._agent_location = self._agent_start_location
         self._target_location = np.array(target_loc, dtype=np.int32)
         self._wall_locations = np.array(wall_locs)
         self._radiation_locations = np.array(radiation_locs, dtype=np.int32)
+
         self._radiation_consts = np.array(radiation_consts)
-        self._radiation_dose = self._calc_rad_dose()
+        self._radiation_vals = self._calc_rad_doses()
+        self._radiation_dose = self._radiation_vals[tuple(self._agent_location)]
         
         self.observation_space = gym.spaces.Dict(
             {
                 'agent': gym.spaces.Box(low=0, high=size, shape=(2,), dtype=int),
-                'target': gym.spaces.Box(low=0, high=size, shape=(2,), dtype=int)
+                'target': gym.spaces.Box(low=0, high=size, shape=(2,), dtype=int),
+                'radiation_dose': gym.spaces.Box(low=0, high=np.inf, shape=(), dtype=float)
             }
         )
 
@@ -40,13 +44,32 @@ class RadiationGridworld(gym.Env):
 
         self.render_mode = render_mode
 
-    def _calc_rad_dose(self):
-        dose = 0
-        for i, rad_loc in enumerate(self._radiation_locations):
-            gamma, activity = self._radiation_consts[i]
-            dose += gamma*activity/(np.linalg.norm(self._agent_location - rad_loc)**2)
+    def _calc_rad_doses(self):
+        doses = np.zeros((self.size, self.size), dtype=np.float32)
+        largest = 0.0
+        for x in range(self.size):
+            for y in range(self.size):
+                dose = 0
+
+                wall = False
+                for i in self._wall_locations:
+                    if np.array_equal([x, y], i):
+                        wall = True
+                        break
+                if not wall:
+                    for i, rad_loc in enumerate(self._radiation_locations):
+                        gamma, activity = self._radiation_consts[i]
+                        dose += gamma*activity/(np.linalg.norm(np.array([x, y]) - rad_loc)**2)
+                    
+                if dose > largest and dose != np.inf:
+                    largest = dose
+
+                doses[x, y] = dose
         
-        return dose
+        doses /= largest
+        doses[doses == np.inf] = 1.0
+
+        return doses
 
     def _get_obs(self):
         return {'agent': self._agent_location, 'target': self._target_location, 'radiation_dose': self._radiation_dose}
@@ -103,7 +126,7 @@ class RadiationGridworld(gym.Env):
         return observation, reward, terminated, info
     
 
-    def render(self):
+    def render(self, dir: str = None):
         if self.render_mode == 'ansi':
             for y in range(self.size-1, -1, -1):
                 row = ''
@@ -130,3 +153,7 @@ class RadiationGridworld(gym.Env):
                             row += '. '
                 print(row)
             print()
+        elif self.render_mode == 'radiation_map':
+            plt.title('Radiation Map')
+            plt.imshow(self._radiation_vals, cmap='hot')
+            plt.savefig(dir if dir is not None else 'radiation_map.png')
