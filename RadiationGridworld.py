@@ -9,8 +9,7 @@ class RadiationGridworld(gym.Env):
             wall_locs: list[list[int, int]],
             radiation_locs: list[list[int, int]],
             radiation_consts: list[list[int, int]],
-            step_limit: int = 100,
-            transition_prob: float = 0.9
+            render_mode: str = 'ansi'
         ):
         self.size = size
 
@@ -39,10 +38,8 @@ class RadiationGridworld(gym.Env):
             3: np.array([0, -1])
         }
 
-        self.step_limit = step_limit
-        self._curr_steps = 0
-        self._transition_prob = transition_prob
-    
+        self.render_mode = render_mode
+
     def _calc_rad_dose(self):
         dose = 0
         for i, rad_loc in enumerate(self._radiation_locations):
@@ -60,7 +57,6 @@ class RadiationGridworld(gym.Env):
                 'manhattan': np.linalg.norm(self._agent_location - self._target_location, ord=1),
                 'euclidean': np.linalg.norm(self._agent_location - self._target_location)
             },
-            'step': self._curr_steps,
             'radiation_dose': self._radiation_dose
         }
     
@@ -89,10 +85,6 @@ class RadiationGridworld(gym.Env):
         # check if target is reached
         terminated = np.array_equal(self._agent_location, self._target_location)
 
-        # end episode if step limit is reached
-        self._curr_steps += 1
-        truncated = self._curr_steps == self.step_limit
-
         # calculate reward
         # positive reward if target is reached
         if terminated:
@@ -108,7 +100,33 @@ class RadiationGridworld(gym.Env):
         observation = self._get_obs()
         info = self._get_info()
 
-        return observation, reward, terminated, truncated, info
+        return observation, reward, terminated, info
     
 
-
+    def render(self):
+        if self.render_mode == 'ansi':
+            for y in range(self.size-1, -1, -1):
+                row = ''
+                for x in range(self.size):
+                    if np.array_equal([x, y], self._agent_location):
+                        row += 'A '
+                    elif np.array_equal([x, y], self._target_location):
+                        row += 'T '
+                    else:
+                        rad = False
+                        for i in self._radiation_locations:
+                            if np.array_equal([x, y], i):
+                                row += 'R '
+                                rad = True
+                                break
+                        wall = False
+                        for i in self._wall_locations:
+                            if np.array_equal([x, y], i):
+                                row += 'W '
+                                wall = True
+                                break
+                        
+                        if not rad and not wall:
+                            row += '. '
+                print(row)
+            print()

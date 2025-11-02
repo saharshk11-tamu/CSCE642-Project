@@ -1,17 +1,5 @@
-from radiation_env.env import RadiationEnv
-import numpy as np
+from RadiationGridworld import RadiationGridworld
 
-env = RadiationEnv()
+env = RadiationGridworld(5, [0, 0], [4, 4], [[2, 3]], [[3, 2]], [[0, 0]])
 
-obs, _ = env.reset()
-done = False
-total_reward = 0
-
-while not done:
-    action = env.action_space.sample()
-    obs, reward, terminated, truncated = env.step(action)
-    total_reward += reward
-    env.render()
-    done = terminated or truncated
-
-print("Episode reward:", total_reward)
+env.render()
