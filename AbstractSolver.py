@@ -5,9 +5,11 @@ class AbstractSolver():
 
     def __init__(self, env: RadiationGridworld, epsilon: float = 0.1, gamma: float = 0.1, num_episodes: int = 100, max_steps: int = 100):
         self.env = env
-        self.epsilon = epsilon
+        self.epsilon = epsilon # probability of choosing a random action
+        self.gamma = gamma # discount factor
         self.num_episodes = num_episodes
         self.max_steps = max_steps
+        self.total_steps = 0
     
     @abstractmethod
     def train_episode(self):

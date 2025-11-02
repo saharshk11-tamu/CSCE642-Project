@@ -1,11 +1,13 @@
 import numpy as np
 import gymnasium as gym
 import matplotlib.pyplot as plt
+import json
 
 class RadiationGridworld(gym.Env):
 
     def __init__(
-            self, size,
+            self,
+            size,
             agent_loc: list[int, int],
             target_loc: list[int, int],
             wall_locs: list[list[int, int]],
@@ -25,13 +27,8 @@ class RadiationGridworld(gym.Env):
         self._radiation_vals = self._calc_rad_doses()
         self._radiation_dose = self._radiation_vals[tuple(self._agent_location)]
         
-        self.observation_space = gym.spaces.Dict(
-            {
-                'agent': gym.spaces.Box(low=0, high=size, shape=(2,), dtype=int),
-                'target': gym.spaces.Box(low=0, high=size, shape=(2,), dtype=int),
-                'radiation_dose': gym.spaces.Box(low=0, high=np.inf, shape=(), dtype=float)
-            }
-        )
+        # represent agent position as a single discrete state: index = x + y*size
+        self.observation_space = gym.spaces.Discrete(self.size * self.size)
 
         self.action_space = gym.spaces.Discrete(4)
 
@@ -72,15 +69,12 @@ class RadiationGridworld(gym.Env):
         return doses
 
     def _get_obs(self):
-        return {'agent': self._agent_location, 'target': self._target_location, 'radiation_dose': self._radiation_dose}
+        x, y = int(self._agent_location[0]), int(self._agent_location[1])
+        return {'agent_location': x + y * self.size}
     
     def _get_info(self):
         return {
-            'distance': {
-                'manhattan': np.linalg.norm(self._agent_location - self._target_location, ord=1),
-                'euclidean': np.linalg.norm(self._agent_location - self._target_location)
-            },
-            'radiation_dose': self._radiation_dose
+            'distance': np.linalg.norm(self._agent_location - self._target_location)
         }
     
     def reset(self, *, seed = None, options = None):
@@ -154,7 +148,26 @@ class RadiationGridworld(gym.Env):
                 print(row)
             print()
         elif self.render_mode == 'radiation_map':
+            data = np.flip(self._radiation_vals, axis=0)
+            print(data)
             plt.title('Gridworld Radiation Map')
-            plt.imshow(np.flip(self._radiation_vals, axis=0), cmap='hot')
+            plt.imshow(data, cmap='hot')
             plt.axis('off')
             plt.savefig(dir if dir is not None else 'radiation_map.png')
+    
+    def save(self, path: str = 'radiation_gridworld.json'):
+        config = {
+            'size': self.size,
+            'agent_start_location': self._agent_start_location,
+            'agent_location': self._agent_location,
+            'target_location': self._target_location,
+            'wall_locations': self._wall_locations,
+            'radiation_locations': self._radiation_locations,
+            'radiation_consts': self._radiation_consts,
+            'radiation_vals': self._radiation_vals,
+            'radiation_dose': self._radiation_dose,
+            'render_mode': self.render_mode
+        }
+
+        with open(path, 'w') as file:
+            json.dump(config, file, indent=4)
