@@ -10,6 +10,7 @@ class AbstractSolver():
         self.num_episodes = num_episodes
         self.max_steps = max_steps
         self.total_steps = 0
+        self.reward = 0.0
     
     @abstractmethod
     def train_episode(self):
