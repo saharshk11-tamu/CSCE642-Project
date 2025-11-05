@@ -4,7 +4,7 @@
 `pip install -r requirements.txt`
 
 ### Basic Usage
-`python solvers/runner.py`
+`python Solvers/runner.py`
 
 ### config.json Format
 The runner expects a JSON file with the following top-level structure:
