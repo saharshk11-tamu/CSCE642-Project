@@ -1,4 +1,4 @@
-from runner import Runner
+from Solvers.runner import Runner
 
 runner = Runner('config.json')
 
