@@ -3,6 +3,7 @@ from RadiationGridworld import RadiationGridworld
 from Solvers.PolicyIteration import PolicyIteration
 from Solvers.DQL import DQN
 from Solvers.REINFORCE import Reinforce
+from Solvers.A2C import A2C
 from tqdm import tqdm
 import os
 import numpy as np
@@ -30,6 +31,8 @@ class Runner():
             self.solver = DQN(self.env, **self.config['solver']['params'])
         elif self.solver_type == 'REINFORCE':
             self.solver = Reinforce(self.env, **self.config['solver']['params'])
+        elif self.solver_type == 'A2C':
+            self.solver = A2C(self.env, **self.config['solver']['params'])
         
         self.log = []
 
@@ -76,38 +79,52 @@ class Runner():
 
 
 def main():
-    '''
-    Example usage of the Runner class to train a Policy Iteration solver in the Radiation Gridworld environment.
-    '''
-    runner = Runner('config.json')
-    log_path = 'logs/test/'
-    os.makedirs(log_path, exist_ok=True)
+    # '''
+    # Example usage of the Runner class to train a Policy Iteration solver in the Radiation Gridworld environment.
+    # '''
+    # runner = Runner('config.json')
+    # log_path = 'logs/test/'
+    # os.makedirs(log_path, exist_ok=True)
 
-    runner.run(verbose=True, log_path=log_path)
+    # runner.run(verbose=True, log_path=log_path)
 
-    print(f'Trained Solver: {runner.solver_type}')
-    avg, std = runner.solver.evaluate_greedy_policy(num_episodes=100)
-    print(f'Average Reward: {avg}')
-    print(f'Standard Deviation of Reward: {std}')
+    # print(f'Trained Solver: {runner.solver_type}')
+    # avg, std = runner.solver.evaluate_greedy_policy(num_episodes=100)
+    # print(f'Average Reward: {avg}')
+    # print(f'Standard Deviation of Reward: {std}')
+
+    # '''
+    # Example usage of the Runner class to train a DQN solver in the Radiation Gridworld environment.
+    # '''
+    # runner = Runner('dqn_config.json')
+    # log_path = 'logs/test/'
+    # os.makedirs(log_path, exist_ok=True)
+
+    # runner.run(verbose=True, log_path=log_path)
+
+    # print(f'Trained Solver: {runner.solver_type}')
+    # avg, std = runner.solver.evaluate_greedy_policy(num_episodes=100)
+    # print(f'Average Reward: {avg}')
+    # print(f'Standard Deviation of Reward: {std}')
+
+    # '''
+    # Example usage of the Runner class to train a REINFORCE solver in the Radiation Gridworld environment.
+    # '''
+    # runner = Runner('reinforce_config.json')
+    # log_path = 'logs/test/'
+    # os.makedirs(log_path, exist_ok=True)
+
+    # runner.run(verbose=True, log_path=log_path)
+
+    # print(f'Trained Solver: {runner.solver_type}')
+    # avg, std = runner.solver.evaluate_greedy_policy(num_episodes=100)
+    # print(f'Average Reward: {avg}')
+    # print(f'Standard Deviation of Reward: {std}')
 
     '''
-    Example usage of the Runner class to train a DQN solver in the Radiation Gridworld environment.
+    Example usage of the Runner class to train a A2C solver in the Radiation Gridworld environment.
     '''
-    runner = Runner('dqn_config.json')
-    log_path = 'logs/test/'
-    os.makedirs(log_path, exist_ok=True)
-
-    runner.run(verbose=True, log_path=log_path)
-
-    print(f'Trained Solver: {runner.solver_type}')
-    avg, std = runner.solver.evaluate_greedy_policy(num_episodes=100)
-    print(f'Average Reward: {avg}')
-    print(f'Standard Deviation of Reward: {std}')
-
-    '''
-    Example usage of the Runner class to train a REINFORCE solver in the Radiation Gridworld environment.
-    '''
-    runner = Runner('reinforce_config.json')
+    runner = Runner('a2c_config.json')
     log_path = 'logs/test/'
     os.makedirs(log_path, exist_ok=True)
 

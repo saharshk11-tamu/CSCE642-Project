@@ -36,6 +36,10 @@ class AbstractSolver():
     def create_greedy_policy(self):
         pass
 
+    def step(self, action):
+        _, next_state, reward, done, info = self.env.step(action)
+        return next_state, reward, done, info
+
     def evaluate_greedy_policy(self, num_episodes: int = 100):
         '''
         Evaluates the solver's greedy policy by running multiple rollouts in the environment.
