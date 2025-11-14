@@ -1,0 +1,13 @@
+[project]
+name = "csce642-project"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12.12"
+dependencies = [
+    "gymnasium>=1.2.2",
+    "matplotlib>=3.10.7",
+    "numpy<2",
+    "torch==2.2.2",
+    "tqdm>=4.67.1",
+]

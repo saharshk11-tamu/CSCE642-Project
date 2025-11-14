@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from RadiationGridworld import RadiationGridworld
+import numpy as np
 
 class AbstractSolver():
     '''
@@ -32,5 +33,34 @@ class AbstractSolver():
         pass
 
     @abstractmethod
-    def greedy_policy(self):
+    def create_greedy_policy(self):
         pass
+
+    def step(self, action):
+        _, next_state, reward, done, info = self.env.step(action)
+        return next_state, reward, done, info
+
+    def evaluate_greedy_policy(self, num_episodes: int = 100):
+        '''
+        Evaluates the solver's greedy policy by running multiple rollouts in the environment.
+        Parameters:
+        - num_episodes: int, the number of evaluation episodes to average over
+        Returns:
+        - avg_return: float, the mean return over the evaluation episodes
+        - std_return: float, the standard deviation of returns over the evaluation episodes
+        '''
+        policy_fn = self.create_greedy_policy()
+        returns = []
+        for _ in range(num_episodes):
+            total_reward = 0.0
+            state, _ = self.env.reset()
+            for _ in range(self.max_steps):
+                action = policy_fn(state)
+                next_state, reward, done, _ = self.step(action)
+                total_reward += reward
+                state = next_state
+                if done:
+                    break
+            returns.append(total_reward)
+        returns = np.array(returns, dtype=np.float32)
+        return float(returns.mean()), float(returns.std())

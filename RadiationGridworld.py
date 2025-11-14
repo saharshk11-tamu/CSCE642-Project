@@ -229,8 +229,14 @@ class RadiationGridworld(gym.Env):
         '''
         transitions = self.get_transition(self.location_to_state(self._agent_location), action)
 
-        probs = [transitions[a][0] for a in transitions.keys()]
-        chosen_action = np.random.choice(np.arange(self.action_space.n), p=probs)
+        if np.isclose(self._transition_prob, 1.0):
+            chosen_action = action
+        else:
+            action_ids = np.array(list(transitions.keys()))
+            probs = np.array([transitions[a][0] for a in action_ids], dtype=np.float64)
+            probs /= probs.sum()  # guard against numerical drift
+            chosen_action = np.random.choice(action_ids, p=probs)
+
         prob, new_state, reward, terminated = transitions[chosen_action]
         new_location = self.state_to_location(new_state)
 
