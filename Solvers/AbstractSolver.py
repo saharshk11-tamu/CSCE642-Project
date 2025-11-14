@@ -33,7 +33,7 @@ class AbstractSolver():
         pass
 
     @abstractmethod
-    def greedy_policy(self):
+    def create_greedy_policy(self):
         pass
 
     def evaluate_greedy_policy(self, num_episodes: int = 100):

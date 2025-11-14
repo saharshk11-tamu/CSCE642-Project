@@ -2,6 +2,7 @@ import json
 from RadiationGridworld import RadiationGridworld
 from Solvers.PolicyIteration import PolicyIteration
 from Solvers.DQL import DQN
+from Solvers.REINFORCE import Reinforce
 from tqdm import tqdm
 import os
 import numpy as np
@@ -27,6 +28,8 @@ class Runner():
             self.solver = PolicyIteration(self.env, **self.config['solver']['params'])
         elif self.solver_type == 'DQN':
             self.solver = DQN(self.env, **self.config['solver']['params'])
+        elif self.solver_type == 'REINFORCE':
+            self.solver = Reinforce(self.env, **self.config['solver']['params'])
         
         self.log = []
 
@@ -91,6 +94,20 @@ def main():
     Example usage of the Runner class to train a DQN solver in the Radiation Gridworld environment.
     '''
     runner = Runner('dqn_config.json')
+    log_path = 'logs/test/'
+    os.makedirs(log_path, exist_ok=True)
+
+    runner.run(verbose=True, log_path=log_path)
+
+    print(f'Trained Solver: {runner.solver_type}')
+    avg, std = runner.solver.evaluate_greedy_policy(num_episodes=100)
+    print(f'Average Reward: {avg}')
+    print(f'Standard Deviation of Reward: {std}')
+
+    '''
+    Example usage of the Runner class to train a REINFORCE solver in the Radiation Gridworld environment.
+    '''
+    runner = Runner('reinforce_config.json')
     log_path = 'logs/test/'
     os.makedirs(log_path, exist_ok=True)
 
