@@ -99,12 +99,14 @@ class Reinforce(AbstractSolver):
     
     def train_episode(self):
         state, _ = self.env.reset()
+        self.reward = 0.0
         rewards = []
         action_probs = []
         baselines = []
         for _ in range(self.max_steps):
             action, prob, baseline = self.select_action(state)
             next_state, reward, done, _ = self.step(action)
+            self.reward += reward
             rewards.append(reward)
             action_probs.append(prob)
             baselines.append(baseline)

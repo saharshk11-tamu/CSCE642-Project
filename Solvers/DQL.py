@@ -135,7 +135,7 @@ class DQN(AbstractSolver):
         self.reward = 0
         for _ in range(self.max_steps):
             action = np.random.choice(np.arange(self.env.action_space.n), p=self.epsilon_greedy_policy(state))
-            _, next_state, reward, done, _ = self.env.step(action)
+            next_state, reward, done, _ = self.step(action)
             self.reward += reward
             self.memorize(state, action, reward, next_state, done)
             self.replay()

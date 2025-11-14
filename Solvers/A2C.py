@@ -91,10 +91,12 @@ class A2C(AbstractSolver):
 
     def train_episode(self):
         state, _ = self.env.reset()
+        self.reward = 0.0
 
         for _ in range(self.max_steps):
             action, prob, value = self.select_action(state)
             next_state, reward, done, _ = self.step(action)
+            self.reward += reward
             encoded_next_state = self._encode_state(next_state)
             _, next_value = self.actor_critic(encoded_next_state)
 

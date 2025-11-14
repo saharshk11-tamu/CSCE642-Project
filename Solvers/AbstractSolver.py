@@ -56,7 +56,7 @@ class AbstractSolver():
             state, _ = self.env.reset()
             for _ in range(self.max_steps):
                 action = policy_fn(state)
-                _, next_state, reward, done, _ = self.env.step(action)
+                next_state, reward, done, _ = self.step(action)
                 total_reward += reward
                 state = next_state
                 if done:
