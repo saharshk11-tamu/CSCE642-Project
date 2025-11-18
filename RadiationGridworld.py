@@ -320,7 +320,8 @@ class RadiationGridworld(gym.Env):
             'radiation_consts': self._radiation_consts,
             'radiation_vals': self._radiation_vals,
             'radiation_dose': self._radiation_dose,
-            'transition_prob': self._transition_prob
+            'transition_prob': self._transition_prob,
+            'collision_penalty': self._collision_penalty
         }
 
         with open(path, 'w') as file:
@@ -345,3 +346,8 @@ class RadiationGridworld(gym.Env):
         self._radiation_vals = np.array(config['radiation_vals'], dtype=np.float32)
         self._radiation_dose = config['radiation_dose']
         self._transition_prob = config['transition_prob']
+        self._collision_penalty = config['_collision_penalty']
+
+
+    def set_random(self, seed=0):
+        pass
