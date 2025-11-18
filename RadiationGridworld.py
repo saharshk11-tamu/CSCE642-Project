@@ -47,7 +47,8 @@ class RadiationGridworld(gym.Env):
             distance_multiplier: float = 0.1,
             radiation_multiplier: float = 0.1,
             target_reward: float = 1.0,
-            transition_prob: float = 1.0
+            transition_prob: float = 1.0,
+            collision_penalty: float = 0.05
         ):
         '''
         Initializes the Radiation Gridworld environment.
@@ -78,6 +79,7 @@ class RadiationGridworld(gym.Env):
         self._distance_multiplier = distance_multiplier
         self._radiation_multiplier = radiation_multiplier
         self._target_reward = target_reward
+        self._collision_penalty = collision_penalty
         
         self.observation_space = gym.spaces.Discrete(self.size * self.size)
 
@@ -148,7 +150,10 @@ class RadiationGridworld(gym.Env):
     
     def _get_info(self):
         return {
-            'distance': np.linalg.norm(self._agent_location - self._target_location)
+            'curr_step': self._curr_steps,
+            'distance': np.linalg.norm(self._agent_location - self._target_location),
+            'current_dose': self._radiation_vals[tuple(self._agent_location)],
+            'cumulative_dose': self._radiation_dose
         }
     
     def reset(self, *, seed = None, options = None):
@@ -156,6 +161,7 @@ class RadiationGridworld(gym.Env):
 
         self._agent_location = self._agent_start_location
         self._curr_steps = 0
+        self._radiation_dose = self._radiation_vals[tuple(self._agent_location)]
 
         observation = self._get_obs()
         info = self._get_info()
@@ -186,7 +192,8 @@ class RadiationGridworld(gym.Env):
             
             # get next state
             direction = self._action_to_direction[action]
-            new_location = np.clip(location + direction, 0, self.size-1)
+            proposed = location + direction
+            new_location = np.clip(proposed, 0, self.size-1)
 
             # don't move if agent tries to move into a wall
             for i in self._wall_locations:
@@ -207,9 +214,14 @@ class RadiationGridworld(gym.Env):
                 # reward based on distance to target
                 distance = np.linalg.norm(new_location - self._target_location)
                 reward = -self._distance_multiplier*distance
-                # reward based on radiation dose received
                 rad_dose = self._radiation_vals[tuple(new_location)]
-                reward += -self._distance_multiplier*rad_dose
+                # reward based on prospective cumulative radiation dose (do not mutate here)
+                prospective_cum = self._radiation_dose + rad_dose
+                reward += -self._radiation_multiplier*prospective_cum
+                # collision penalty
+                collided = np.array_equal(new_location, location)
+                if collided:
+                    reward -= self._collision_penalty
             
             transitions[action] = (prob, new_state, reward, terminated)
         
@@ -240,7 +252,10 @@ class RadiationGridworld(gym.Env):
         prob, new_state, reward, terminated = transitions[chosen_action]
         new_location = self.state_to_location(new_state)
 
+        rad_dose = self._radiation_vals[tuple(new_location)]
+        self._radiation_dose += rad_dose
         self._agent_location = new_location
+        self._curr_steps += 1
         observation = self._get_obs()
         info = self._get_info()
 
