@@ -9,9 +9,12 @@ from Solvers.DQL import DQN
 from Solvers.REINFORCE import Reinforce
 from Solvers.A2C import A2C
 
+import random
 
+random.seed(0)
 # 1. Define a standard set of environments
-#    You can add/remove scenarios as needed.
+#    You can add/remove scenarios as needed. ***NOTE*** Implement a random gridworld method in RadiaitonGridworld.py to streamline this over many
+#    GridWorlds
 STANDARD_ENVIRONMENTS: List[Dict[str, Any]] = [
     {
         "name": "env_baseline_single_source",
