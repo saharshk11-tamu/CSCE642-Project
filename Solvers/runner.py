@@ -7,6 +7,7 @@ from Solvers.A2C import A2C
 from tqdm import tqdm
 import os
 import numpy as np
+import matplotlib.pyplot as plt
 
 class Runner():
     '''
@@ -56,6 +57,17 @@ class Runner():
             with open(log_path+f'{self.solver_type}_training_log.json', 'w') as file:
                 json.dump(self.log, file, indent=4)
     
+    def plot_run(self, log_path='logs/'):
+        if len(self.log) == 0:
+            print('Call Runner.run() before plotting')
+        
+        plt.plot(self.log)
+        plt.xlabel('Epochs')
+        plt.ylabel('Reward')
+        plt.title(f'{self.solver_type} Performance')
+        plt.savefig(log_path+f'{self.solver_type}_training_plot.png')
+        plt.close()
+    
     def get_policy(self):
         '''
         Returns the learned policy from the solver.
@@ -92,48 +104,49 @@ def main():
     avg, std = runner.solver.evaluate_greedy_policy(num_episodes=100)
     print(f'Average Reward: {avg}')
     print(f'Standard Deviation of Reward: {std}')
+    runner.plot_run(log_path)
 
-    '''
-    Example usage of the Runner class to train a DQN solver in the Radiation Gridworld environment.
-    '''
-    runner = Runner('dqn_config.json')
-    log_path = 'logs/test/'
-    os.makedirs(log_path, exist_ok=True)
+    # '''
+    # Example usage of the Runner class to train a DQN solver in the Radiation Gridworld environment.
+    # '''
+    # runner = Runner('dqn_config.json')
+    # log_path = 'logs/test/'
+    # os.makedirs(log_path, exist_ok=True)
 
-    runner.run(verbose=True, log_path=log_path)
+    # runner.run(verbose=True, log_path=log_path)
 
-    print(f'Trained Solver: {runner.solver_type}')
-    avg, std = runner.solver.evaluate_greedy_policy(num_episodes=100)
-    print(f'Average Reward: {avg}')
-    print(f'Standard Deviation of Reward: {std}')
+    # print(f'Trained Solver: {runner.solver_type}')
+    # avg, std = runner.solver.evaluate_greedy_policy(num_episodes=100)
+    # print(f'Average Reward: {avg}')
+    # print(f'Standard Deviation of Reward: {std}')
 
-    '''
-    Example usage of the Runner class to train a REINFORCE solver in the Radiation Gridworld environment.
-    '''
-    runner = Runner('reinforce_config.json')
-    log_path = 'logs/test/'
-    os.makedirs(log_path, exist_ok=True)
+    # '''
+    # Example usage of the Runner class to train a REINFORCE solver in the Radiation Gridworld environment.
+    # '''
+    # runner = Runner('reinforce_config.json')
+    # log_path = 'logs/test/'
+    # os.makedirs(log_path, exist_ok=True)
 
-    runner.run(verbose=True, log_path=log_path)
+    # runner.run(verbose=True, log_path=log_path)
 
-    print(f'Trained Solver: {runner.solver_type}')
-    avg, std = runner.solver.evaluate_greedy_policy(num_episodes=100)
-    print(f'Average Reward: {avg}')
-    print(f'Standard Deviation of Reward: {std}')
+    # print(f'Trained Solver: {runner.solver_type}')
+    # avg, std = runner.solver.evaluate_greedy_policy(num_episodes=100)
+    # print(f'Average Reward: {avg}')
+    # print(f'Standard Deviation of Reward: {std}')
 
-    '''
-    Example usage of the Runner class to train a A2C solver in the Radiation Gridworld environment.
-    '''
-    runner = Runner('a2c_config.json')
-    log_path = 'logs/test/'
-    os.makedirs(log_path, exist_ok=True)
+    # '''
+    # Example usage of the Runner class to train a A2C solver in the Radiation Gridworld environment.
+    # '''
+    # runner = Runner('a2c_config.json')
+    # log_path = 'logs/test/'
+    # os.makedirs(log_path, exist_ok=True)
 
-    runner.run(verbose=True, log_path=log_path)
+    # runner.run(verbose=True, log_path=log_path)
 
-    print(f'Trained Solver: {runner.solver_type}')
-    avg, std = runner.solver.evaluate_greedy_policy(num_episodes=100)
-    print(f'Average Reward: {avg}')
-    print(f'Standard Deviation of Reward: {std}')
+    # print(f'Trained Solver: {runner.solver_type}')
+    # avg, std = runner.solver.evaluate_greedy_policy(num_episodes=100)
+    # print(f'Average Reward: {avg}')
+    # print(f'Standard Deviation of Reward: {std}')
 
 if __name__ == '__main__':
     main()

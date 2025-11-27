@@ -301,6 +301,7 @@ class RadiationGridworld(gym.Env):
             plt.imshow(data, cmap='hot')
             plt.axis('off')
             plt.savefig(dir if dir is not None else 'radiation_map.png')
+            plt.close()
         else:
             print(f'Invalid render mode: {render_mode}')
     
