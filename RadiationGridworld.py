@@ -5,12 +5,12 @@ import json
 
 class RadiationGridworld(gym.Env):
     '''
-    Radiation Gridworld Environment
-    A gridworld environment where an agent must navigate to a target while avoiding walls and minimizing radiation exposure.
+    Radiation Gridworld Environment (multi-agent)
+    A gridworld environment where one or more agents navigate to a single target while avoiding walls and minimizing radiation exposure.
     The environment is represented as a square grid of size (size x size).
-    The agent can move in four directions: up, down, left, right.
-    The environment contains walls that the agent cannot pass through, radiation sources that increase the agent's radiation dose, and a target location that the agent must reach.
-    The agent receives rewards based on its distance to the target and the radiation dose it receives.
+    Each agent can move in four directions: up, down, left, right.
+    The environment contains walls that agents cannot pass through, radiation sources that increase the agent's radiation dose, and a target location that agents must reach.
+    Agents receive rewards based on a mix of individual progress and group progress, and an episode terminates when every agent reaches the target.
     '''
 
     def location_to_state(self, location: list[int, int] | np.ndarray):
@@ -38,8 +38,8 @@ class RadiationGridworld(gym.Env):
 
     def __init__(
             self,
-            size,
-            agent_loc: list[int, int],
+            size: int,
+            agent_locs: list[list[int, int]],
             target_loc: list[int, int],
             wall_locs: list[list[int, int]],
             radiation_locs: list[list[int, int]],
@@ -54,8 +54,8 @@ class RadiationGridworld(gym.Env):
         Initializes the Radiation Gridworld environment.
         Parameters:
         - size: int, the size of the gridworld (size x size)
-        - agent_loc: list of two ints, the starting location of the agent [x, y]
-        - target_loc: list of two ints, the location of the target [x, y]
+        - agent_locs: list of two ints per agent, the starting locations [[x1, y1], [x2, y2], ...]
+        - target_loc: list of two ints, the location of the single target [x, y]
         - wall_locs: list of lists of two ints, the locations of walls [[x1, y1], [x2, y2], ...]
         - radiation_locs: list of lists of two ints, the locations of radiation sources [[x1, y1], [x2, y2], ...]
         - radiation_consts: list of lists of two ints, the radiation constants for each source [[gamma1, activity1], [gamma2, activity2], ...]
@@ -63,27 +63,46 @@ class RadiationGridworld(gym.Env):
         - radiation_multiplier: float, the multiplier for radiation-based rewards
         - target_reward: float, the reward for reaching the target
         - transition_prob: float, the probability of taking the intended action
+        - collision_penalty: float, the penalty for attempted moves into walls or out-of-bounds
         '''
         self.size = size
+        self.num_agents = len(agent_locs)
 
-        self._agent_start_location = np.array(agent_loc, dtype=np.int32)
-        self._agent_location = self._agent_start_location
+        self._agent_start_locations = np.array(agent_locs, dtype=np.int32)
+        self._agent_locations = np.array(agent_locs, dtype=np.int32)
         self._target_location = np.array(target_loc, dtype=np.int32)
         self._wall_locations = np.array(wall_locs)
         self._radiation_locations = np.array(radiation_locs, dtype=np.int32)
 
         self._radiation_consts = np.array(radiation_consts, dtype=np.float32)
         self._radiation_vals = self._calc_rad_doses()
-        self._radiation_dose = self._radiation_vals[tuple(self._agent_location)]
+        self._radiation_doses = np.array(
+            [self._radiation_vals[tuple(loc)] for loc in self._agent_locations],
+            dtype=np.float32
+        )
+        self._cumulative_doses = np.array(self._radiation_doses, dtype=np.float32)
 
         self._distance_multiplier = distance_multiplier
         self._radiation_multiplier = radiation_multiplier
         self._target_reward = target_reward
         self._collision_penalty = collision_penalty
-        
-        self.observation_space = gym.spaces.Discrete(self.size * self.size)
 
-        self.action_space = gym.spaces.Discrete(4)
+        self.observation_space = gym.spaces.Dict({
+            'positions': gym.spaces.Box(
+                low=0,
+                high=self.size - 1,
+                shape=(self.num_agents, 2),
+                dtype=np.int32
+            ),
+            'doses': gym.spaces.Box(
+                low=0.0,
+                high=1.0,
+                shape=(self.num_agents,),
+                dtype=np.float32
+            )
+        })
+
+        self.action_space = gym.spaces.MultiDiscrete([4] * self.num_agents)
 
         self._action_to_direction = {
             0: np.array([1, 0]), # right
@@ -108,6 +127,8 @@ class RadiationGridworld(gym.Env):
         }
 
         self._transition_prob = transition_prob
+        self._reached_target = np.zeros(self.num_agents, dtype=bool)
+        self._curr_steps = 0
 
     def _calc_rad_doses(self):
         '''
@@ -146,120 +167,147 @@ class RadiationGridworld(gym.Env):
         return doses
 
     def _get_obs(self):
-        return self.location_to_state(self._agent_location)
-    
-    def _get_info(self):
         return {
-            'curr_step': self._curr_steps,
-            'distance': np.linalg.norm(self._agent_location - self._target_location),
-            'current_dose': self._radiation_vals[tuple(self._agent_location)],
-            'cumulative_dose': self._radiation_dose
+            'positions': np.array(self._agent_locations, dtype=np.int32),
+            'doses': np.array([self._radiation_vals[tuple(loc)] for loc in self._agent_locations], dtype=np.float32)
         }
     
-    def reset(self, *, seed = None, options = None):
+    def _get_info(self):
+        distances = np.linalg.norm(self._agent_locations - self._target_location, axis=1)
+        return {
+            'curr_step': self._curr_steps,
+            'distances': distances,
+            'current_doses': np.array([self._radiation_vals[tuple(loc)] for loc in self._agent_locations], dtype=np.float32),
+            'cumulative_doses': np.array(self._cumulative_doses, dtype=np.float32),
+            'reached_target': np.array(self._reached_target, dtype=bool)
+        }
+    
+    def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
 
-        self._agent_location = self._agent_start_location
+        self._agent_locations = np.array(self._agent_start_locations, dtype=np.int32)
         self._curr_steps = 0
-        self._radiation_dose = self._radiation_vals[tuple(self._agent_location)]
+        self._radiation_doses = np.array(
+            [self._radiation_vals[tuple(loc)] for loc in self._agent_locations],
+            dtype=np.float32
+        )
+        self._cumulative_doses = np.array(self._radiation_doses, dtype=np.float32)
+        self._reached_target = np.zeros(self.num_agents, dtype=bool)
 
         observation = self._get_obs()
         info = self._get_info()
 
         return observation, info
     
-    def get_transition(self, s, a):
+    def get_transition(self, positions, actions):
         '''
-        Gets the transition probabilities, next states, rewards, and termination flags for taking action a in state s.
+        Gets the transition probabilities, next positions, rewards, and termination flags for a batch of actions.
         Parameters:
-        - s: int, the current state
-        - a: int, the action to be taken
+        - positions: np.ndarray of shape (num_agents, 2), current positions
+        - actions: iterable of length num_agents, intended actions for each agent
         Returns:
-        - transitions: dict, mapping from action to (probability, next_state, reward, terminated)
+        - transitions: list of dicts, one per agent, mapping action -> (probability, next_position, reward, reached_target)
 
         Note: This function should not be used with any model-free RL algorithms.
         '''
-        x, y = self.state_to_location(s)
-        location = np.array([x, y], dtype=np.int32)
-        transitions = {}
+        positions = np.array(positions, dtype=np.int32)
+        actions = np.array(actions, dtype=np.int32)
+        transitions = []
 
-        for action in range(self.action_space.n):
-            # calculate probability of taking this action
-            if action == a:
-                prob = self._transition_prob
-            else:
-                prob = (1 - self._transition_prob) / (self.action_space.n - 1)
-            
-            # get next state
-            direction = self._action_to_direction[action]
-            proposed = location + direction
-            new_location = np.clip(proposed, 0, self.size-1)
+        for agent_idx in range(self.num_agents):
+            location = positions[agent_idx]
+            intended_action = actions[agent_idx]
+            agent_transitions = {}
 
-            # don't move if agent tries to move into a wall
-            for i in self._wall_locations:
-                if np.array_equal(new_location, i):
-                    new_location = location
-                    break
-            
-            new_state = self.location_to_state(new_location)
+            for action in range(4):
+                if action == intended_action:
+                    prob = self._transition_prob
+                else:
+                    prob = (1 - self._transition_prob) / 3
 
-            # check if new state is terminal
-            terminated = np.array_equal(new_location, self._target_location)
+                direction = self._action_to_direction[action]
+                proposed = location + direction
+                new_location = np.clip(proposed, 0, self.size - 1)
 
-            # calculate reward
-            # positive reward if target is reached
-            if terminated:
-                reward = self._target_reward
-            else:
-                # reward based on distance to target
-                distance = np.linalg.norm(new_location - self._target_location)
-                reward = -self._distance_multiplier*distance
-                rad_dose = self._radiation_vals[tuple(new_location)]
-                # reward based on prospective cumulative radiation dose (do not mutate here)
-                prospective_cum = self._radiation_dose + rad_dose
-                reward += -self._radiation_multiplier*prospective_cum
-                # collision penalty
-                collided = np.array_equal(new_location, location)
-                if collided:
-                    reward -= self._collision_penalty
-            
-            transitions[action] = (prob, new_state, reward, terminated)
-        
+                for i in self._wall_locations:
+                    if np.array_equal(new_location, i):
+                        new_location = location
+                        break
+
+                reached = np.array_equal(new_location, self._target_location)
+
+                if reached:
+                    reward = self._target_reward
+                else:
+                    distance = np.linalg.norm(new_location - self._target_location)
+                    reward = -self._distance_multiplier * distance
+                    rad_dose = self._radiation_vals[tuple(new_location)]
+                    prospective_cum = self._cumulative_doses[agent_idx] + rad_dose
+                    reward += -self._radiation_multiplier * prospective_cum
+                    if np.array_equal(new_location, location):
+                        reward -= self._collision_penalty
+
+                agent_transitions[action] = (prob, new_location, reward, reached)
+
+            transitions.append(agent_transitions)
+
         return transitions
     
-    def step(self, action):
+    def step(self, actions):
         '''
-        Takes a step in the environment using the given action.
+        Takes a step in the environment using the given actions for each agent.
         Parameters:
-        - action: int, the action to be taken
+        - actions: iterable of length num_agents, the actions to be taken
         Returns:
-        - prob: float, the probability of taking the chosen action
-        - observation: int, the new state after taking the action
-        - reward: float, the reward received after taking the action
-        - terminated: bool, whether the episode has terminated
+        - probs: np.ndarray of shape (num_agents,), probability of each chosen action
+        - observation: dict, containing positions and current doses for all agents
+        - rewards: np.ndarray of shape (num_agents,), reward received by each agent
+        - terminated: bool, whether all agents have reached the target
         - info: dict, additional information about the environment
         '''
-        transitions = self.get_transition(self.location_to_state(self._agent_location), action)
+        actions = np.array(actions, dtype=np.int32)
+        if actions.shape != (self.num_agents,):
+            raise ValueError(f'actions must have shape ({self.num_agents},), got {actions.shape}')
 
-        if np.isclose(self._transition_prob, 1.0):
-            chosen_action = action
-        else:
-            action_ids = np.array(list(transitions.keys()))
-            probs = np.array([transitions[a][0] for a in action_ids], dtype=np.float64)
-            probs /= probs.sum()  # guard against numerical drift
-            chosen_action = np.random.choice(action_ids, p=probs)
+        transitions = self.get_transition(self._agent_locations, actions)
 
-        prob, new_state, reward, terminated = transitions[chosen_action]
-        new_location = self.state_to_location(new_state)
+        chosen_probs = np.zeros(self.num_agents, dtype=np.float32)
+        individual_rewards = np.zeros(self.num_agents, dtype=np.float32)
 
-        rad_dose = self._radiation_vals[tuple(new_location)]
-        self._radiation_dose += rad_dose
-        self._agent_location = new_location
+        for agent_idx, agent_transitions in enumerate(transitions):
+            if np.isclose(self._transition_prob, 1.0):
+                chosen_action = actions[agent_idx]
+            else:
+                action_ids = np.array(list(agent_transitions.keys()))
+                probs = np.array([agent_transitions[a][0] for a in action_ids], dtype=np.float64)
+                probs /= probs.sum()
+                chosen_action = np.random.choice(action_ids, p=probs)
+
+            prob, new_location, reward, reached = agent_transitions[chosen_action]
+            rad_dose = self._radiation_vals[tuple(new_location)]
+
+            self._agent_locations[agent_idx] = new_location
+            self._radiation_doses[agent_idx] = rad_dose
+            self._cumulative_doses[agent_idx] += rad_dose
+            self._reached_target[agent_idx] = self._reached_target[agent_idx] or reached
+
+            chosen_probs[agent_idx] = prob
+            individual_rewards[agent_idx] = reward
+
+        distances = np.linalg.norm(self._agent_locations - self._target_location, axis=1)
+        group_reward = -self._distance_multiplier * np.mean(distances)
+        group_reward += -self._radiation_multiplier * np.mean(self._cumulative_doses)
+        if np.all(self._reached_target):
+            group_reward += self._target_reward
+
+        rewards = individual_rewards + group_reward
+
+        terminated = bool(np.all(self._reached_target))
         self._curr_steps += 1
         observation = self._get_obs()
         info = self._get_info()
 
-        return prob, observation, reward, terminated, info
+        return chosen_probs, observation, rewards, terminated, info
     
 
     def render(self, render_mode: str = 'ansi', dir: str = None):
@@ -273,20 +321,22 @@ class RadiationGridworld(gym.Env):
             for y in range(self.size-1, -1, -1):
                 row = ''
                 for x in range(self.size):
-                    if np.array_equal([x, y], self._agent_location):
-                        row += 'A '
-                    elif np.array_equal([x, y], self._target_location):
+                    cell = np.array([x, y])
+                    agent_idxs = [idx for idx, loc in enumerate(self._agent_locations) if np.array_equal(cell, loc)]
+                    if agent_idxs:
+                        row += f'A{agent_idxs[0]} '
+                    elif np.array_equal(cell, self._target_location):
                         row += 'T '
                     else:
                         rad = False
                         for i in self._radiation_locations:
-                            if np.array_equal([x, y], i):
+                            if np.array_equal(cell, i):
                                 row += 'R '
                                 rad = True
                                 break
                         wall = False
                         for i in self._wall_locations:
-                            if np.array_equal([x, y], i):
+                            if np.array_equal(cell, i):
                                 row += 'W '
                                 wall = True
                                 break
@@ -313,14 +363,17 @@ class RadiationGridworld(gym.Env):
         '''
         config = {
             'size': self.size,
-            'agent_start_location': self._agent_start_location,
-            'agent_location': self._agent_location,
-            'target_location': self._target_location,
-            'wall_locations': self._wall_locations,
-            'radiation_locations': self._radiation_locations,
-            'radiation_consts': self._radiation_consts,
-            'radiation_vals': self._radiation_vals,
-            'radiation_dose': self._radiation_dose,
+            'num_agents': self.num_agents,
+            'agent_start_locations': self._agent_start_locations.tolist(),
+            'agent_locations': self._agent_locations.tolist(),
+            'target_location': self._target_location.tolist(),
+            'wall_locations': self._wall_locations.tolist(),
+            'radiation_locations': self._radiation_locations.tolist(),
+            'radiation_consts': self._radiation_consts.tolist(),
+            'radiation_vals': self._radiation_vals.tolist(),
+            'radiation_doses': self._radiation_doses.tolist(),
+            'cumulative_doses': self._cumulative_doses.tolist(),
+            'reached_target': self._reached_target.tolist(),
             'transition_prob': self._transition_prob,
             'collision_penalty': self._collision_penalty
         }
@@ -338,17 +391,56 @@ class RadiationGridworld(gym.Env):
             config = json.load(file)
         
         self.size = config['size']
-        self._agent_start_location = np.array(config['agent_start_location'], dtype=np.int32)
-        self._agent_location = np.array(config['agent_location'], dtype=np.int32)
+        self.num_agents = config.get('num_agents', len(config['agent_start_locations']))
+        self._agent_start_locations = np.array(config['agent_start_locations'], dtype=np.int32)
+        self._agent_locations = np.array(config['agent_locations'], dtype=np.int32)
         self._target_location = np.array(config['target_location'], dtype=np.int32)
         self._wall_locations = np.array(config['wall_locations'], dtype=np.int32)
         self._radiation_locations = np.array(config['radiation_locations'], dtype=np.int32)
         self._radiation_consts = np.array(config['radiation_consts'], dtype=np.float32)
-        self._radiation_vals = np.array(config['radiation_vals'], dtype=np.float32)
-        self._radiation_dose = config['radiation_dose']
+        self._radiation_vals = np.array(config.get('radiation_vals', self._calc_rad_doses()), dtype=np.float32)
+        self._radiation_doses = np.array(config.get('radiation_doses', [self._radiation_vals[tuple(loc)] for loc in self._agent_locations]), dtype=np.float32)
+        self._cumulative_doses = np.array(config.get('cumulative_doses', self._radiation_doses.tolist()), dtype=np.float32)
+        self._reached_target = np.array(config.get('reached_target', [False] * self.num_agents), dtype=bool)
         self._transition_prob = config['transition_prob']
-        self._collision_penalty = config['_collision_penalty']
+        self._collision_penalty = config['collision_penalty']
+
+        self.observation_space = gym.spaces.Dict({
+            'positions': gym.spaces.Box(
+                low=0,
+                high=self.size - 1,
+                shape=(self.num_agents, 2),
+                dtype=np.int32
+            ),
+            'doses': gym.spaces.Box(
+                low=0.0,
+                high=1.0,
+                shape=(self.num_agents,),
+                dtype=np.float32
+            )
+        })
+
+        self.action_space = gym.spaces.MultiDiscrete([4] * self.num_agents)
 
 
     def set_random(self, seed=0):
-        pass
+        '''
+        Randomly resets agent starting locations (avoiding walls and the target) and resets the environment.
+        '''
+        rng = np.random.default_rng(seed)
+        free_cells = []
+        for x in range(self.size):
+            for y in range(self.size):
+                cell = np.array([x, y], dtype=np.int32)
+                if any(np.array_equal(cell, w) for w in self._wall_locations):
+                    continue
+                if np.array_equal(cell, self._target_location):
+                    continue
+                free_cells.append(cell)
+
+        if len(free_cells) < self.num_agents:
+            raise ValueError('Not enough free cells to place all agents.')
+
+        rng.shuffle(free_cells)
+        self._agent_start_locations = np.array(free_cells[:self.num_agents], dtype=np.int32)
+        return self.reset()
