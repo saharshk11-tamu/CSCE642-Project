@@ -1,39 +1,43 @@
-import json
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+from tqdm import tqdm
+
 from RadiationGridworld import RadiationGridworld
 from Solvers.PolicyIteration import PolicyIteration
 from Solvers.DQL import DQN
 from Solvers.REINFORCE import Reinforce
 from Solvers.A2C import A2C
-from tqdm import tqdm
-import os
-import numpy as np
-import matplotlib.pyplot as plt
+
 
 class Runner():
     '''
     Runner class to manage the training of reinforcement learning agents in the Radiation Gridworld environment.
-    It initializes the environment and solver based on a configuration file, runs the training process, and logs the results.
+    It initializes the environment and solver based on provided configuration dictionaries, runs the training process, and logs the results.
     '''
 
-    def __init__(self, config_path: str):
+    def __init__(self, gridworld_config: dict, solver_config: dict):
         '''
-        Initializes the Runner with the specified configuration file.
+        Initializes the Runner with configuration dictionaries.
         Parameters:
-        - config_path: str, the path to the JSON configuration file
+        - gridworld_config: dict, parameters for RadiationGridworld constructor
+        - solver_config: dict with keys:
+            - 'type': str, one of {'Policy Iteration', 'DQN', 'REINFORCE', 'A2C'}
+            - 'params': dict, keyword args for the solver
         '''
-        with open(config_path, 'r') as file:
-            self.config = json.load(file)
-
-        self.env = RadiationGridworld(**self.config['gridworld'])
-        self.solver_type = self.config['solver']['type']
+        self.env = RadiationGridworld(**gridworld_config)
+        self.solver_type = solver_config['type']
+        params = solver_config.get('params', {})
         if self.solver_type == 'Policy Iteration':
-            self.solver = PolicyIteration(self.env, **self.config['solver']['params'])
+            self.solver = PolicyIteration(self.env, **params)
         elif self.solver_type == 'DQN':
-            self.solver = DQN(self.env, **self.config['solver']['params'])
+            self.solver = DQN(self.env, **params)
         elif self.solver_type == 'REINFORCE':
-            self.solver = Reinforce(self.env, **self.config['solver']['params'])
+            self.solver = Reinforce(self.env, **params)
         elif self.solver_type == 'A2C':
-            self.solver = A2C(self.env, **self.config['solver']['params'])
+            self.solver = A2C(self.env, **params)
+        else:
+            raise ValueError(f'Unknown solver type: {self.solver_type}')
         
         self.log = []
 
@@ -53,9 +57,9 @@ class Runner():
             self.log.append(self.solver.reward)
 
         if log_path is not None:
-            self.env.render(render_mode='radiation_map', dir=log_path+'radiation_map.png')
-            with open(log_path+f'{self.solver_type}_training_log.json', 'w') as file:
-                json.dump(self.log, file, indent=4)
+            os.makedirs(log_path, exist_ok=True)
+            self.env.render(render_mode='radiation_map', dir=os.path.join(log_path, 'radiation_map.png'))
+            np.save(os.path.join(log_path, f'{self.solver_type}_training_log.npy'), np.array(self.log, dtype=np.float32))
     
     def plot_run(self, log_path='logs/'):
         if len(self.log) == 0:
@@ -65,7 +69,8 @@ class Runner():
         plt.xlabel('Epochs')
         plt.ylabel('Reward')
         plt.title(f'{self.solver_type} Performance')
-        plt.savefig(log_path+f'{self.solver_type}_training_plot.png')
+        os.makedirs(log_path, exist_ok=True)
+        plt.savefig(os.path.join(log_path, f'{self.solver_type}_training_plot.png'))
         plt.close()
     
     def get_policy(self):
@@ -77,14 +82,16 @@ class Runner():
         '''
         final_policy = []
         policy = self.solver.create_greedy_policy()
-        state, _ = self.env.reset()
+        obs, _ = self.env.reset()
         total_reward = 0
         for _ in range(self.solver.max_steps):
-            action = policy(state)
-            final_policy.append(self.env._action_to_direction_string['arrow'][action])
-            _, next_state, reward, done, _ = self.env.step(action)
-            total_reward += reward
-            state = next_state
+            actions = policy(obs)
+            final_policy.append([
+                self.env._action_to_direction_string['arrow'][a] for a in actions
+            ])
+            _, next_obs, rewards, done, _ = self.env.step(actions)
+            total_reward += float(self.solver.reward_aggregator(np.array(rewards)))
+            obs = next_obs
             if done:
                 break
         return np.array(final_policy), total_reward
@@ -92,61 +99,40 @@ class Runner():
 
 def main():
     '''
-    Example usage of the Runner class to train a Policy Iteration solver in the Radiation Gridworld environment.
+    Example usage of the Runner class to train a solver in the Radiation Gridworld environment.
     '''
-    runner = Runner('config.json')
+    gridworld_config = {
+        'size': 5,
+        'agent_locs': [[0, 0], [4, 4]],
+        'target_loc': [2, 2],
+        'wall_locs': [],
+        'radiation_locs': [[1, 1]],
+        'radiation_consts': [[1.0, 1.0]],
+        'distance_multiplier': 0.1,
+        'radiation_multiplier': 0.1,
+        'target_reward': 1.0,
+        'transition_prob': 1.0,
+        'collision_penalty': 0.05
+    }
+    solver_config = {
+        'type': 'DQN',
+        'params': {
+            'num_episodes': 1000,
+            'max_steps': 50
+        }
+    }
+
+    runner = Runner(gridworld_config, solver_config)
     log_path = 'logs/test/'
     os.makedirs(log_path, exist_ok=True)
 
     runner.run(verbose=True, log_path=log_path)
 
     print(f'Trained Solver: {runner.solver_type}')
-    avg, std = runner.solver.evaluate_greedy_policy(num_episodes=100)
+    avg, std = runner.solver.evaluate_greedy_policy(num_episodes=10)
     print(f'Average Reward: {avg}')
     print(f'Standard Deviation of Reward: {std}')
     runner.plot_run(log_path)
-
-    # '''
-    # Example usage of the Runner class to train a DQN solver in the Radiation Gridworld environment.
-    # '''
-    # runner = Runner('dqn_config.json')
-    # log_path = 'logs/test/'
-    # os.makedirs(log_path, exist_ok=True)
-
-    # runner.run(verbose=True, log_path=log_path)
-
-    # print(f'Trained Solver: {runner.solver_type}')
-    # avg, std = runner.solver.evaluate_greedy_policy(num_episodes=100)
-    # print(f'Average Reward: {avg}')
-    # print(f'Standard Deviation of Reward: {std}')
-
-    # '''
-    # Example usage of the Runner class to train a REINFORCE solver in the Radiation Gridworld environment.
-    # '''
-    # runner = Runner('reinforce_config.json')
-    # log_path = 'logs/test/'
-    # os.makedirs(log_path, exist_ok=True)
-
-    # runner.run(verbose=True, log_path=log_path)
-
-    # print(f'Trained Solver: {runner.solver_type}')
-    # avg, std = runner.solver.evaluate_greedy_policy(num_episodes=100)
-    # print(f'Average Reward: {avg}')
-    # print(f'Standard Deviation of Reward: {std}')
-
-    # '''
-    # Example usage of the Runner class to train a A2C solver in the Radiation Gridworld environment.
-    # '''
-    # runner = Runner('a2c_config.json')
-    # log_path = 'logs/test/'
-    # os.makedirs(log_path, exist_ok=True)
-
-    # runner.run(verbose=True, log_path=log_path)
-
-    # print(f'Trained Solver: {runner.solver_type}')
-    # avg, std = runner.solver.evaluate_greedy_policy(num_episodes=100)
-    # print(f'Average Reward: {avg}')
-    # print(f'Standard Deviation of Reward: {std}')
 
 if __name__ == '__main__':
     main()
