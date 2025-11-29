@@ -117,7 +117,7 @@ def main():
     solver_config = {
         'type': 'DQN',
         'params': {
-            'num_episodes': 1000,
+            'num_episodes': 100,
             'max_steps': 50
         }
     }
