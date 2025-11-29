@@ -8,17 +8,18 @@ from Solvers.AbstractSolver import AbstractSolver
 
 
 class PolicyNet(nn.Module):
-    def __init__(self, state_size, action_size, hidden_sizes=[64, 64]):
+    def __init__(self, state_size, num_agents, hidden_sizes=[128, 128]):
         super().__init__()
-        hidden_sizes = hidden_sizes or [64]
+        hidden_sizes = hidden_sizes or [128]
         layers = []
         input_size = state_size
         for hidden in hidden_sizes:
             layers.append(nn.Linear(input_size, hidden))
             input_size = hidden
         self.layers = nn.ModuleList(layers)
-        self.policy_head = nn.Linear(input_size, action_size)
+        self.policy_head = nn.Linear(input_size, num_agents * 4)
         self.value_head = nn.Linear(input_size, 1)
+        self.num_agents = num_agents
 
     def forward(self, obs):
         if not torch.is_tensor(obs):
@@ -32,31 +33,39 @@ class PolicyNet(nn.Module):
         for layer in self.layers:
             x = torch.relu(layer(x))
 
-        probs = torch.softmax(self.policy_head(x), dim=-1)
-        baseline = self.value_head(x).squeeze(-1)
+        logits = self.policy_head(x)  # (batch, num_agents*4)
+        logits = logits.view(x.shape[0], self.num_agents, 4)
+        probs = torch.softmax(logits, dim=-1)  # (batch, num_agents, 4)
+        baseline = self.value_head(x).squeeze(-1)  # (batch,)
 
-        return probs.squeeze(0), baseline.squeeze(0)
+        return probs, baseline
+
 
 class Reinforce(AbstractSolver):
-    def __init__(self, env, epsilon=0.1, gamma=0.1, num_episodes=100, max_steps=100, layers=[64, 64], lr=1e-3):
+    def __init__(self, env, epsilon=0.1, gamma=0.1, num_episodes=100, max_steps=100, layers=[128, 128], lr=1e-3):
         super().__init__(env, epsilon, gamma, num_episodes, max_steps)
-        self.model = PolicyNet(env.observation_space.n, env.action_space.n, layers)
+        self.num_agents = env.num_agents
+        self.state_size = self._calc_state_size()
+        self.model = PolicyNet(self.state_size, self.num_agents, layers)
         self.optimizer = Adam(self.model.parameters(), lr=lr)
     
-    def _encode_state(self, state):
-        state_tensor = torch.as_tensor(state)
-        if state_tensor.ndim == 0:
-            state_tensor = state_tensor.unsqueeze(0)
-        state_tensor = state_tensor.long()
-        encoded = F.one_hot(state_tensor, num_classes=self.env.observation_space.n).float()
-        if encoded.shape[0] == 1:
-            return encoded.squeeze(0)
-        return encoded
+    def _calc_state_size(self):
+        positions_dim = self.num_agents * 2
+        doses_dim = self.num_agents
+        return positions_dim + doses_dim
+
+    def _flatten_state(self, state):
+        positions = np.asarray(state['positions'], dtype=np.float32) / max(self.env.size - 1, 1)
+        doses = np.asarray(state['doses'], dtype=np.float32)
+        flat = np.concatenate([positions.flatten(), doses])
+        return flat
     
     def create_greedy_policy(self):
         def policy_fn(state):
-            encoded_state = self._encode_state(state)
-            return torch.argmax(self.model(encoded_state)[0]).detach().item()
+            flat_state = self._flatten_state(state)
+            probs, _ = self.model(torch.as_tensor(flat_state, dtype=torch.float32))
+            actions = torch.argmax(probs.squeeze(0), dim=-1).detach().cpu().numpy()
+            return actions
         return policy_fn
 
     def compute_returns(self, rewards):
@@ -68,50 +77,62 @@ class Reinforce(AbstractSolver):
         return returns
 
     def select_action(self, state):
-        encoded_state = self._encode_state(state)
-        probs, baseline = self.model(encoded_state)
-        probs_np = probs.detach().numpy()
-        action = np.random.choice(len(probs_np), p=probs_np)
+        flat_state = self._flatten_state(state)
+        probs, baseline = self.model(torch.as_tensor(flat_state, dtype=torch.float32))
+        probs = probs.squeeze(0)  # (num_agents, 4)
 
-        return action, probs[action], baseline
+        actions = []
+        log_probs = []
+        for agent_idx in range(self.num_agents):
+            p = probs[agent_idx]
+            a = np.random.choice(4, p=p.detach().numpy())
+            actions.append(a)
+            log_probs.append(torch.log(p[a]))
+
+        actions = np.array(actions, dtype=np.int64)
+        log_prob_sum = torch.stack(log_probs).sum()
+
+        return actions, log_prob_sum, baseline.squeeze(0)
     
-    def pg_loss(self, advantage, prob):
-        return -advantage * torch.log(prob)
+    def pg_loss(self, advantage, log_prob_sum):
+        return -advantage * log_prob_sum
     
-    def update_model(self, rewards, action_probs, baselines):
+    def update_model(self, rewards, log_prob_sums, baselines):
         returns = torch.as_tensor(
             self.compute_returns(rewards), dtype=torch.float32
         )
 
-        action_probs = torch.stack(action_probs)
+        log_prob_sums = torch.stack(log_prob_sums)
         baselines = torch.stack(baselines)
 
         deltas = returns - baselines
 
-        pg_loss = self.pg_loss(deltas.detach(), action_probs).mean()
+        pg_loss = self.pg_loss(deltas.detach(), log_prob_sums).mean()
         value_loss = F.smooth_l1_loss(returns.detach(), baselines)
 
         loss = pg_loss + value_loss
 
         self.optimizer.zero_grad()
         loss.backward()
+        torch.nn.utils.clip_grad_value_(self.model.parameters(), 100)
         self.optimizer.step()
     
     def train_episode(self):
-        state, _ = self.env.reset()
+        obs, _ = self.env.reset()
         self.reward = 0.0
         rewards = []
-        action_probs = []
+        log_prob_sums = []
         baselines = []
         for _ in range(self.max_steps):
-            action, prob, baseline = self.select_action(state)
-            next_state, reward, done, _ = self.step(action)
-            self.reward += reward
-            rewards.append(reward)
-            action_probs.append(prob)
+            actions, log_prob_sum, baseline = self.select_action(obs)
+            _, next_obs, rewards_vec, done, _ = self.env.step(actions)
+            reward_scalar = float(self.reward_aggregator(np.array(rewards_vec)))
+            self.reward += reward_scalar
+            rewards.append(reward_scalar)
+            log_prob_sums.append(log_prob_sum)
             baselines.append(baseline)
 
-            state = next_state
+            obs = next_obs
             if done: break
         
-        self.update_model(rewards, action_probs, baselines)
+        self.update_model(rewards, log_prob_sums, baselines)

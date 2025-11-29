@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import numpy as np
 
 from torch.optim import Adam
@@ -9,17 +8,18 @@ from Solvers.AbstractSolver import AbstractSolver
 
 
 class ActorCriticNetwork(nn.Module):
-    def __init__(self, state_size, action_size, hidden_sizes=[64, 64]):
+    def __init__(self, state_size, num_agents, hidden_sizes=[128, 128]):
         super().__init__()
-        hidden_sizes = hidden_sizes or [64]
+        hidden_sizes = hidden_sizes or [128]
         layers = []
         input_size = state_size
         for hidden in hidden_sizes:
             layers.append(nn.Linear(input_size, hidden))
             input_size = hidden
         self.layers = nn.ModuleList(layers)
-        self.policy_head = nn.Linear(input_size, action_size)
+        self.policy_head = nn.Linear(input_size, num_agents * 4)
         self.value_head = nn.Linear(input_size, 1)
+        self.num_agents = num_agents
 
     def forward(self, obs):
         if not torch.is_tensor(obs):
@@ -33,76 +33,95 @@ class ActorCriticNetwork(nn.Module):
         for layer in self.layers:
             x = torch.relu(layer(x))
 
-        probs = torch.softmax(self.policy_head(x), dim=-1)
-        value = self.value_head(x).squeeze(-1)
+        logits = self.policy_head(x)  # (batch, num_agents*4)
+        logits = logits.view(x.shape[0], self.num_agents, 4)
+        probs = torch.softmax(logits, dim=-1)  # (batch, num_agents, 4)
+        value = self.value_head(x).squeeze(-1)  # (batch,)
 
-        return probs.squeeze(0), value.squeeze(0)
+        return probs, value
 
 
 class A2C(AbstractSolver):
-    def __init__(self, env, epsilon=0.1, gamma=0.1, num_episodes=100, max_steps=100, layers=[64, 64], lr=1e-3):
+    def __init__(self, env, epsilon=0.1, gamma=0.1, num_episodes=100, max_steps=100, layers=[128, 128], lr=1e-3):
         super().__init__(env, epsilon, gamma, num_episodes, max_steps)
+        self.num_agents = env.num_agents
+        self.state_size = self._calc_state_size()
         self.actor_critic = ActorCriticNetwork(
-            env.observation_space.n, env.action_space.n, layers
+            self.state_size, self.num_agents, layers
         )
         self.optimizer = Adam(self.actor_critic.parameters(), lr=lr)
 
-    def _encode_state(self, state):
-        state_tensor = torch.as_tensor(state)
-        if state_tensor.ndim == 0:
-            state_tensor = state_tensor.unsqueeze(0)
-        state_tensor = state_tensor.long()
-        encoded = F.one_hot(state_tensor, num_classes=self.env.observation_space.n).float()
-        if encoded.shape[0] == 1:
-            return encoded.squeeze(0)
-        return encoded
+    def _calc_state_size(self):
+        positions_dim = self.num_agents * 2
+        doses_dim = self.num_agents
+        return positions_dim + doses_dim
+
+    def _flatten_state(self, state):
+        positions = np.asarray(state['positions'], dtype=np.float32) / max(self.env.size - 1, 1)
+        doses = np.asarray(state['doses'], dtype=np.float32)
+        flat = np.concatenate([positions.flatten(), doses])
+        return flat
 
     def create_greedy_policy(self):
         def policy_fn(state):
-            encoded_state = self._encode_state(state)
-            return torch.argmax(self.actor_critic(encoded_state)[0]).detach().item()
+            flat_state = self._flatten_state(state)
+            probs, _ = self.actor_critic(torch.as_tensor(flat_state, dtype=torch.float32))
+            actions = torch.argmax(probs.squeeze(0), dim=-1).detach().cpu().numpy()
+            return actions
 
         return policy_fn
 
     def select_action(self, state):
-        encoded_state = self._encode_state(state)
-        probs, value = self.actor_critic(encoded_state)
+        flat_state = self._flatten_state(state)
+        probs, value = self.actor_critic(torch.as_tensor(flat_state, dtype=torch.float32))
+        probs = probs.squeeze(0)  # (num_agents, 4)
 
-        probs_np = probs.detach().numpy()
-        action = np.random.choice(len(probs_np), p=probs_np)
+        actions = []
+        action_probs = []
+        for agent_idx in range(self.num_agents):
+            p = probs[agent_idx]
+            a = np.random.choice(4, p=p.detach().numpy())
+            actions.append(a)
+            action_probs.append(p[a])
 
-        return action, probs[action], value
+        actions = np.array(actions, dtype=np.int64)
+        log_prob_sum = torch.stack([torch.log(p) for p in action_probs]).sum()
 
-    def actor_loss(self, advantage, prob):
-        return -advantage * torch.log(prob)
+        return actions, log_prob_sum, value.squeeze(0)
+
+    def actor_loss(self, advantage, log_prob_sum):
+        return -advantage * log_prob_sum
 
     def critic_loss(self, advantage):
         return 0.5 * advantage.pow(2)
 
-    def update_actor_critic(self, advantage, prob):
-        actor_loss = self.actor_loss(advantage.detach(), prob)
+    def update_actor_critic(self, advantage, log_prob_sum):
+        actor_loss = self.actor_loss(advantage.detach(), log_prob_sum)
         critic_loss = self.critic_loss(advantage)
 
         loss = actor_loss + critic_loss
 
         self.optimizer.zero_grad()
         loss.backward()
+        torch.nn.utils.clip_grad_value_(self.actor_critic.parameters(), 100)
         self.optimizer.step()
 
     def train_episode(self):
-        state, _ = self.env.reset()
+        obs, _ = self.env.reset()
         self.reward = 0.0
 
         for _ in range(self.max_steps):
-            action, prob, value = self.select_action(state)
-            next_state, reward, done, _ = self.step(action)
-            self.reward += reward
-            encoded_next_state = self._encode_state(next_state)
-            _, next_value = self.actor_critic(encoded_next_state)
+            actions, log_prob_sum, value = self.select_action(obs)
+            _, next_obs, rewards, done, _ = self.env.step(actions)
+            reward_scalar = float(self.reward_aggregator(np.array(rewards)))
+            self.reward += reward_scalar
 
-            advantage = reward + (1 - done) * self.gamma * next_value - value
-            self.update_actor_critic(advantage, prob)
+            flat_next_state = self._flatten_state(next_obs)
+            _, next_value = self.actor_critic(torch.as_tensor(flat_next_state, dtype=torch.float32))
 
-            state = next_state
+            advantage = reward_scalar + (1 - done) * self.gamma * next_value.squeeze(0) - value
+            self.update_actor_critic(advantage, log_prob_sum)
+
+            obs = next_obs
             if done:
                 break
