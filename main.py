@@ -6,6 +6,7 @@ from itertools import product
 
 import numpy as np
 import torch
+from tqdm import tqdm
 
 from Solvers.runner import Runner
 
@@ -103,11 +104,21 @@ def main(sizes, seed, log_dir, num_agents, num_episodes, max_steps):
         size_dir = os.path.join(log_dir, f"size_{size}")
         os.makedirs(size_dir, exist_ok=True)
 
-        for wall_level, rad_level, strength_level in product(difficulty_levels, repeat=3):
+        grid_variants = list(product(difficulty_levels, repeat=3))
+        grid_bar = tqdm(grid_variants, desc=f"Gridworlds (size {size})", leave=False)
+        for wall_level, rad_level, strength_level in grid_bar:
             grid_dir = os.path.join(size_dir, f"grid_w-{wall_level}_r-{rad_level}_s-{strength_level}")
             os.makedirs(grid_dir, exist_ok=True)
 
             grid_config = build_grid_config(size, agents_for_size, wall_level, rad_level, strength_level, rng)
+            grid_bar.set_postfix({
+                'walls': wall_level,
+                'rad': rad_level,
+                'strength': strength_level,
+                'agents': len(grid_config['agent_locs']),
+                'wall_ct': len(grid_config['wall_locs']),
+                'rad_ct': len(grid_config['radiation_locs']),
+            })
             with open(os.path.join(grid_dir, "grid_config.json"), "w") as fp:
                 json.dump(grid_config, fp, indent=2)
 
