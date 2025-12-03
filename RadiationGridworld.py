@@ -132,7 +132,7 @@ class RadiationGridworld(gym.Env):
 
     def _calc_rad_doses(self):
         '''
-        Calculates the radiation dose at each cell in the gridworld based on the locations and constants of the radiation sources.
+        Calculate normalized radiation dose at each cell based on source locations and constants.
         Returns:
         - doses: 2D numpy array of shape (size, size), the radiation dose at each cell
         '''
@@ -167,12 +167,22 @@ class RadiationGridworld(gym.Env):
         return doses
 
     def _get_obs(self):
+        '''
+        Build the current observation dict for all agents.
+        Returns:
+        - dict with positions and doses arrays
+        '''
         return {
             'positions': np.array(self._agent_locations, dtype=np.int32),
             'doses': np.array([self._radiation_vals[tuple(loc)] for loc in self._agent_locations], dtype=np.float32)
         }
     
     def _get_info(self):
+        '''
+        Build auxiliary info about the current episode state.
+        Returns:
+        - dict of step count, distances, current and cumulative doses, and reached flags
+        '''
         distances = np.linalg.norm(self._agent_locations - self._target_location, axis=1)
         return {
             'curr_step': self._curr_steps,
@@ -183,6 +193,12 @@ class RadiationGridworld(gym.Env):
         }
     
     def reset(self, *, seed=None, options=None):
+        '''
+        Reset environment to initial agent positions and recompute radiation/dose bookkeeping.
+        Returns:
+        - observation dict
+        - info dict
+        '''
         super().reset(seed=seed)
 
         self._agent_locations = np.array(self._agent_start_locations, dtype=np.int32)
@@ -201,7 +217,7 @@ class RadiationGridworld(gym.Env):
     
     def get_transition(self, positions, actions):
         '''
-        Gets the transition probabilities, next positions, rewards, and termination flags for a batch of actions.
+        Get transition probabilities, next positions, rewards, and termination flags for a batch of actions.
         Parameters:
         - positions: np.ndarray of shape (num_agents, 2), current positions
         - actions: iterable of length num_agents, intended actions for each agent
@@ -255,7 +271,7 @@ class RadiationGridworld(gym.Env):
     
     def step(self, actions):
         '''
-        Takes a step in the environment using the given actions for each agent.
+        Execute a joint action for all agents and advance the environment state.
         Parameters:
         - actions: iterable of length num_agents, the actions to be taken
         Returns:
@@ -383,7 +399,7 @@ class RadiationGridworld(gym.Env):
     
     def load(self, path: str = 'radiation_gridworld_config.json'):
         '''
-        Loads the configuration of the Radiation Gridworld from a JSON file.
+        Load a configuration from a JSON file and reset environment state accordingly.
         Parameters:
         - path: str, the file path to load the configuration from
         '''
@@ -425,7 +441,7 @@ class RadiationGridworld(gym.Env):
 
     def set_random(self, seed=0):
         '''
-        Randomly resets agent starting locations (avoiding walls and the target) and resets the environment.
+        Randomly reset agent starting locations (avoiding walls and the target) and reset the environment.
         '''
         rng = np.random.default_rng(seed)
         free_cells = []
