@@ -1,64 +1,45 @@
-# CSCE642-Project
+# Radiation Gridworld Experiment Runner
 
-### Install Requirements
-`pip install -r requirements.txt`
+## Quick start
 
-### Basic Usage
-`python -m Solvers.runner.py`
-
-### config.json Format
-The runner expects a JSON file with the following top-level structure:
-
-```jsonc
-{
-  "gridworld": { /* environment configuration */ },
-  "solver": {   /* training configuration */ }
-}
+### With uv
+```bash
+# Ensure uv is installed (https://docs.astral.sh/uv/)
+uv venv .venv
+uv sync
 ```
-The `gridworld` section specifies the radiation gridworld hyperparameters:
 
-- `gridworld.size` *(int)*: Number of rows/columns in the square grid.
-- `gridworld.agent_loc` *(2-item list[int, int])*: Starting `[x, y]` coordinate of the agent; origin is bottom-left.
-- `gridworld.target_loc` *(2-item list[int, int])*: Goal coordinate the agent must reach.
-- `gridworld.wall_locs` *(list[list[int, int]])*: Obstacles that block movement.
-- `gridworld.radiation_locs` *(list[list[int, int]])*: Cells that emit radiation.
-- `gridworld.radiation_consts` *(list[list[float, float]])*: `[gamma, activity]` constants for each radiation source, ordered to match `radiation_locs`.
-- `gridworld.distance_multiplier` *(float, optional)*: Weight on distance-based penalty (default `0.1`).
-- `gridworld.radiation_multiplier` *(float, optional)*: Weight on radiation penalty (default `0.1`).
-- `gridworld.target_reward` *(float, optional)*: Reward received upon reaching the target (default `1.0`)
-- `gridworld.transition_prob` *(float, optional)*: Probability that the chosen action is executed (default `1.0`).
-
-The `solver` section specifies which algorithm to run and its hyperparameters:
-
-- `solver.type` *(string)*: Currently `"Policy Iteration"` is supported.
-- `solver.params.epsilon` *(float, optional)*: Included for API symmetry; ignored by policy iteration.
-- `solver.params.gamma` *(float)*: Discount factor in `[0, 1)`.
-- `solver.params.num_episodes` *(int)*: Number of policy-iteration sweeps to perform.
-- `solver.params.max_steps` *(int)*: Reserved for future solvers; unused in policy iteration.
-
-A complete example (matching the default `config.json`):
-
-```json
-{
-  "gridworld": {
-    "size": 10,
-    "agent_loc": [0, 0],
-    "target_loc": [9, 9],
-    "wall_locs": [[3, 2], [7, 5], [8, 2], [4, 4], [3, 0]],
-    "radiation_locs": [[2, 3], [7, 1], [6, 6]],
-    "radiation_consts": [[1, 1], [1, 1], [1, 1]],
-    "distance_multiplier": 0.01,
-    "radiation_multiplier": 0.01,
-    "transition_prob": 1.0
-  },
-  "solver": {
-    "type": "Policy Iteration",
-    "params": {
-      "epsilon": 0.1,
-      "gamma": 0.1,
-      "num_episodes": 10,
-      "max_steps": 100
-    }
-  }
-}
+### With pip
+```bash
+pip install -r requirements.txt
 ```
+
+## What it does
+`main.py` generates randomized Radiation Gridworld environments and trains multiple reinforcement learning agents on each variation. It automates creating grid configurations, logging results, and saving visualizations.
+- For each requested grid size, builds 27 grid variations (wall density × radiation source density × radiation strength level).
+- Randomly samples wall locations, radiation sources, and radiation strengths (seeded for reproducibility).
+- Supports multi-agent setups; agent starts are sampled uniquely per grid.
+- Trains three solvers on every grid (`DQN`, `A2C`, `REINFORCE`) for the specified number of episodes/steps.
+- Logs each run under `--log-dir`, saving training rewards (`*.npy`) and plots, plus one radiation heatmap per grid.
+
+## Usage
+```bash
+python main.py --sizes 5 10 --num-agents 3 --seed 123 --log-dir runs --num-episodes 50 --max-steps 200
+```
+
+### Arguments
+- `--sizes`: one or more grid sizes (ints).
+- `--num-agents`: agents per grid (clamped to `[1, size]` per grid).
+- `--seed`: global seed for numpy/random/torch.
+- `--log-dir`: base directory for outputs (defaults to `runs`).
+- `--num-episodes`: training episodes per solver (min 1).
+- `--max-steps`: max steps per episode (min 1).
+
+## Outputs
+- `runs/size_<N>/grid_w-<wall>_r-<rad>_s-<strength>/grid_config.json`: the generated grid definition.
+- `.../radiation_map.png`: heatmap of radiation for that grid (one per grid).
+- `.../<SOLVER>/`: per-solver logs (training rewards `.npy` and plots).
+
+## Notes
+- Radiation source counts scale with grid area via density thresholds; walls/radiation are sampled to avoid agent/target collisions.
+- If `--num-agents` exceeds the grid size, it is capped and a message is printed.***
