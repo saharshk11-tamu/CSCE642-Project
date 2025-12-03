@@ -48,7 +48,9 @@ class RadiationGridworld(gym.Env):
             radiation_multiplier: float = 0.1,
             target_reward: float = 1.0,
             transition_prob: float = 1.0,
-            collision_penalty: float = 0.05
+            collision_penalty: float = 0.05,
+            wall_attenuation_coeff: float = 0.5,   # μ
+            wall_thickness: float = 1.0            # “thickness” per wall cell
         ):
         '''
         Initializes the Radiation Gridworld environment.
@@ -86,6 +88,13 @@ class RadiationGridworld(gym.Env):
         self._radiation_multiplier = radiation_multiplier
         self._target_reward = target_reward
         self._collision_penalty = collision_penalty
+        
+        # Attenuation parameters
+        self._mu = wall_attenuation_coeff
+        self._wall_thickness = wall_thickness
+        
+        # Precompute a fast lookup set for wall cells
+        self._wall_set = { (int(x), int(y)) for x, y in self._wall_locations }
 
         self.observation_space = gym.spaces.Dict({
             'positions': gym.spaces.Box(
@@ -165,6 +174,56 @@ class RadiationGridworld(gym.Env):
         doses[doses == np.inf] = 1.0
 
         return doses
+    
+    def _line_cells(self, start: np.ndarray, end: np.ndarray):
+        """
+        Bresenham-style grid line between two integer points (inclusive).
+        Returns a list of (x, y) tuples.
+        """
+        x0, y0 = int(start[0]), int(start[1])
+        x1, y1 = int(end[0]), int(end[1])
+
+        cells = []
+        dx = abs(x1 - x0)
+        dy = abs(y1 - y0)
+        sx = 1 if x0 < x1 else -1
+        sy = 1 if y0 < y1 else -1
+        err = dx - dy
+
+        while True:
+            cells.append((x0, y0))
+            if x0 == x1 and y0 == y1:
+                break
+            e2 = 2 * err
+            if e2 > -dy:
+                err -= dy
+                x0 += sx
+            if e2 < dx:
+                err += dx
+                y0 += sy
+
+        return cells
+
+    def _compute_attenuation_factor(self, source: np.ndarray, point: np.ndarray) -> float:
+        """
+        Compute exp(-μ x) attenuation along the line from source to point
+        due to any wall cells between them.
+        """
+        line_cells = self._line_cells(source, point)
+        # Exclude the source cell and the target cell itself; we only care about walls *between*
+        interior_cells = line_cells[1:-1]
+
+        n_walls = 0
+        for (cx, cy) in interior_cells:
+            if (cx, cy) in self._wall_set:
+                n_walls += 1
+
+        if n_walls == 0:
+            return 1.0
+
+        path_thickness = n_walls * self._wall_thickness
+        return float(np.exp(-self._mu * path_thickness))
+
 
     def _get_obs(self):
         '''
