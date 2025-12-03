@@ -23,7 +23,8 @@ pip install -r requirements.txt
 - Logs each run under `--log-dir`, saving training rewards (`*.npy`), env info (`*_env_info.json`), and plots, plus one radiation heatmap per grid.
 
 ## Usage
-Default run:
+
+### Example
 ```bash
 python main.py --sizes 5 10 50 100 --num-agents 1 --seed 123 --log-dir runs --num-episodes 20 --max-steps 100
 ```
