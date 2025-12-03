@@ -18,13 +18,14 @@ pip install -r requirements.txt
 `main.py` generates randomized Radiation Gridworld environments and trains multiple reinforcement learning agents on each variation. It automates creating grid configurations, logging results, and saving visualizations.
 - For each requested grid size, builds 27 grid variations (wall density × radiation source density × radiation strength level).
 - Randomly samples wall locations, radiation sources, and radiation strengths (seeded for reproducibility).
-- Supports multi-agent setups; agent starts are sampled uniquely per grid.
+- Supports multi-agent setups; agent starts are sampled uniquely per grid and clamped to `[1, size]` per grid.
 - Trains three solvers on every grid (`DQN`, `A2C`, `REINFORCE`) for the specified number of episodes/steps.
-- Logs each run under `--log-dir`, saving training rewards (`*.npy`) and plots, plus one radiation heatmap per grid.
+- Logs each run under `--log-dir`, saving training rewards (`*.npy`), env info (`*_env_info.json`), and plots, plus one radiation heatmap per grid.
 
 ## Usage
+Default run:
 ```bash
-python main.py --sizes 5 10 --num-agents 3 --seed 123 --log-dir runs --num-episodes 50 --max-steps 200
+python main.py --sizes 5 10 50 100 --num-agents 1 --seed 123 --log-dir runs --num-episodes 20 --max-steps 100
 ```
 
 ### Arguments
@@ -38,8 +39,8 @@ python main.py --sizes 5 10 --num-agents 3 --seed 123 --log-dir runs --num-episo
 ## Outputs
 - `runs/size_<N>/grid_w-<wall>_r-<rad>_s-<strength>/grid_config.json`: the generated grid definition.
 - `.../radiation_map.png`: heatmap of radiation for that grid (one per grid).
-- `.../<SOLVER>/`: per-solver logs (training rewards `.npy` and plots).
+- `.../<SOLVER>/`: per-solver logs (training rewards `.npy`, env info `.json`, training plot).
 
 ## Notes
 - Radiation source counts scale with grid area via density thresholds; walls/radiation are sampled to avoid agent/target collisions.
-- If `--num-agents` exceeds the grid size, it is capped and a message is printed.***
+- If `--num-agents` exceeds the grid size, it is capped and a message is printed. Progress is shown via `tqdm` during grid generation/training.***
