@@ -1,4 +1,5 @@
 import os
+import json
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -47,24 +48,41 @@ class Runner():
         Parameters:
         - verbose: bool, whether to print progress information
         - log_path: str or None, the path to save logs and visualizations; if None, no logs are saved
+        
+        Logs rewards and environment info per episode when a log_path is provided.
         '''
         if verbose:
             print(f'Training {self.solver_type} Solver for {self.solver.num_episodes} episodes...')
         
         self.log = []
+        self.env_info_log = []
         for episode in tqdm(range(self.solver.num_episodes), disable=not verbose):
             self.solver.train_episode()
             self.log.append(self.solver.reward)
+            info = self.env._get_info()
+            serialized_info = {
+                k: v.tolist() if hasattr(v, 'tolist') else v
+                for k, v in info.items()
+            }
+            self.env_info_log.append(serialized_info)
 
         if log_path is not None:
             os.makedirs(log_path, exist_ok=True)
             np.save(os.path.join(log_path, f'{self.solver_type}_training_log.npy'), np.array(self.log, dtype=np.float32))
+            with open(os.path.join(log_path, f'{self.solver_type}_env_info.json'), 'w') as fp:
+                json.dump(self.env_info_log, fp, indent=2)
     
     def plot_run(self, log_path='logs/'):
+        '''
+        Plot and optionally save the reward trace from the last call to run().
+        Parameters:
+        - log_path: str, directory to save the plot image
+        '''
         if len(self.log) == 0:
             print('Call Runner.run() before plotting')
         
-        plt.plot(self.log)
+
+        plt.plot(np.arange(len(self.log)), self.log)
         plt.xlabel('Epochs')
         plt.ylabel('Reward')
         plt.title(f'{self.solver_type} Performance')
