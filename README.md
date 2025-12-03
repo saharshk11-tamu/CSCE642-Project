@@ -23,18 +23,17 @@ pip install -r requirements.txt
 - Logs each run under `--log-dir`, saving training rewards (`*.npy`), env info (`*_env_info.json`), and plots, plus one radiation heatmap per grid.
 
 ## Usage
-Default run:
 ```bash
-python main.py --sizes 5 10 50 100 --num-agents 1 --seed 123 --log-dir runs --num-episodes 20 --max-steps 100
+python main.py --sizes 8 16 --num-agents 2 --seed 42 --log-dir demo_runs --num-episodes 30 --max-steps 150
 ```
 
 ### Arguments
-- `--sizes`: one or more grid sizes (ints).
-- `--num-agents`: agents per grid (clamped to `[1, size]` per grid).
-- `--seed`: global seed for numpy/random/torch.
-- `--log-dir`: base directory for outputs (defaults to `runs`).
-- `--num-episodes`: training episodes per solver (min 1).
-- `--max-steps`: max steps per episode (min 1).
+- `--sizes`: one or more grid sizes (ints). Default: `5 10 50 100`.
+- `--num-agents`: agents per grid (clamped to `[1, size]` per grid). Default: `1`.
+- `--seed`: global seed for numpy/random/torch. Default: `123`.
+- `--log-dir`: base directory for outputs. Default: `runs`.
+- `--num-episodes`: training episodes per solver (min 1). Default: `20`.
+- `--max-steps`: max steps per episode (min 1). Default: `100`.
 
 ## Outputs
 - `runs/size_<N>/grid_w-<wall>_r-<rad>_s-<strength>/grid_config.json`: the generated grid definition.
