@@ -58,7 +58,6 @@ class Runner():
 
         if log_path is not None:
             os.makedirs(log_path, exist_ok=True)
-            self.env.render(render_mode='radiation_map', dir=os.path.join(log_path, 'radiation_map.png'))
             np.save(os.path.join(log_path, f'{self.solver_type}_training_log.npy'), np.array(self.log, dtype=np.float32))
     
     def plot_run(self, log_path='logs/'):
