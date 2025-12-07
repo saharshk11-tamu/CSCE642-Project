@@ -70,11 +70,17 @@ class RadiationGridworld(gym.Env):
         self.size = size
         self.num_agents = len(agent_locs)
 
+        # Attenuation parameters
+        self._mu = wall_attenuation_coeff
+        self._wall_thickness = wall_thickness
+
         self._agent_start_locations = np.array(agent_locs, dtype=np.int32)
         self._agent_locations = np.array(agent_locs, dtype=np.int32)
         self._target_location = np.array(target_loc, dtype=np.int32)
         self._wall_locations = np.array(wall_locs)
         self._radiation_locations = np.array(radiation_locs, dtype=np.int32)
+        # Precompute a fast lookup set for wall cells
+        self._wall_set = { (int(x), int(y)) for x, y in self._wall_locations }
 
         self._radiation_consts = np.array(radiation_consts, dtype=np.float32)
         self._radiation_vals = self._calc_rad_doses()
@@ -88,13 +94,6 @@ class RadiationGridworld(gym.Env):
         self._radiation_multiplier = radiation_multiplier
         self._target_reward = target_reward
         self._collision_penalty = collision_penalty
-        
-        # Attenuation parameters
-        self._mu = wall_attenuation_coeff
-        self._wall_thickness = wall_thickness
-        
-        # Precompute a fast lookup set for wall cells
-        self._wall_set = { (int(x), int(y)) for x, y in self._wall_locations }
 
         self.observation_space = gym.spaces.Dict({
             'positions': gym.spaces.Box(
@@ -149,6 +148,7 @@ class RadiationGridworld(gym.Env):
         largest = 0.0
         for x in range(self.size):
             for y in range(self.size):
+                cell = np.array([x, y], dtype=np.int32)
                 dose = 0
 
                 wall = False
@@ -160,7 +160,8 @@ class RadiationGridworld(gym.Env):
                     for i, rad_loc in enumerate(self._radiation_locations):
                         gamma, activity = self._radiation_consts[i]
                         if not np.array_equal([x, y], rad_loc):
-                            dose += gamma*activity/(np.linalg.norm(np.array([x, y]) - rad_loc)**2)
+                            attenuation = self._compute_attenuation_factor(rad_loc, cell)
+                            dose += attenuation * gamma*activity/(np.linalg.norm(np.array([x, y]) - rad_loc)**2)
                         else:
                             dose = np.inf
                             break
