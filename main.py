@@ -27,6 +27,7 @@ RADIATION_STRENGTH_RANGES = {
     'high': (1.5, 3.0),
 }
 SOLVER_TYPES = ('DQN', 'A2C', 'REINFORCE')
+TARGET_REWARD_PER_UNIT = 10.0
 
 
 def sample_positions(rng: np.random.Generator, count: int, size: int, forbidden: set[tuple[int, int]]):
@@ -77,7 +78,7 @@ def build_grid_config(size: int, num_agents: int, wall_level: str, rad_level: st
         'radiation_consts': rad_consts,
         'distance_multiplier': 0.1,
         'radiation_multiplier': 0.1,
-        'target_reward': 1.0,
+        'target_reward': max(1.0, TARGET_REWARD_PER_UNIT * size),
         'transition_prob': 0.9,
         'collision_penalty': 0.05,
     }
