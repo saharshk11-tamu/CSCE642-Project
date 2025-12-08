@@ -3,6 +3,7 @@ import json
 import os
 import random
 from itertools import product
+import math
 
 import numpy as np
 import torch
@@ -83,7 +84,7 @@ def build_grid_config(size: int, num_agents: int, wall_level: str, rad_level: st
     return grid_config
 
 
-def main(sizes, seed, log_dir, num_agents, num_episodes, max_steps):
+def main(sizes, seed, log_dir, num_agents, num_episodes):
     np.random.seed(seed)
     random.seed(seed)
     torch.manual_seed(seed)
@@ -92,12 +93,14 @@ def main(sizes, seed, log_dir, num_agents, num_episodes, max_steps):
     os.makedirs(log_dir, exist_ok=True)
 
     difficulty_levels = ('low', 'medium', 'high')
-    solver_params = {
-        'num_episodes': max(1, num_episodes),
-        'max_steps': max(1, max_steps),
-    }
+    num_episodes = max(1, num_episodes)
 
     for size in sizes:
+        max_steps_for_size = max(1, math.ceil(2.5 * size))
+        solver_params = {
+            'num_episodes': num_episodes,
+            'max_steps': max_steps_for_size,
+        }
         agents_for_size = max(1, min(num_agents, size))
         if num_agents > size:
             print(f"Requested {num_agents} agents for size {size}; using maximum allowed {agents_for_size}.")
@@ -162,19 +165,13 @@ if __name__ == "__main__":
         '--num-agents',
         help='Number of agents to place in each gridworld (will be clamped to [1, size])',
         type=int,
-        default=1
+        default=3
     )
     parser.add_argument(
         '--num-episodes',
         help='Number of training episodes per solver',
         type=int,
-        default=20
-    )
-    parser.add_argument(
-        '--max-steps',
-        help='Max steps per episode',
-        type=int,
-        default=100
+        default=1000
     )
     args = parser.parse_args()
 
@@ -186,5 +183,4 @@ if __name__ == "__main__":
         log_dir=args.log_dir,
         num_agents=args.num_agents,
         num_episodes=args.num_episodes,
-        max_steps=args.max_steps,
     )
