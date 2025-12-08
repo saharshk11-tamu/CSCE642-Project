@@ -56,7 +56,9 @@ class Runner():
         
         self.log = []
         self.env_info_log = []
-        for episode in tqdm(range(self.solver.num_episodes), disable=not verbose):
+        self.metrics = {}
+        target_reached_count = 0
+        for _ in tqdm(range(self.solver.num_episodes), disable=not verbose):
             self.solver.train_episode()
             self.log.append(self.solver.reward)
             info = self.env._get_info()
@@ -64,13 +66,27 @@ class Runner():
                 k: v.tolist() if hasattr(v, 'tolist') else v
                 for k, v in info.items()
             }
+            reached = True
+            for r in serialized_info['reached_target']:
+                if not r:
+                    reached = False
+                    break
+            if reached:
+                target_reached_count += 1
             self.env_info_log.append(serialized_info)
+        
+        self.log = np.array(self.log, dtype=np.float32)
+        self.metrics['last_100_avg_reward'] = float(np.mean(self.log[-100:]))
+        self.metrics['last_100_std_reward'] = float(np.std(self.log[-100:]))
+        self.metrics['episode_completion_rate'] = target_reached_count / len(self.log)
 
         if log_path is not None:
             os.makedirs(log_path, exist_ok=True)
-            np.save(os.path.join(log_path, f'{self.solver_type}_training_log.npy'), np.array(self.log, dtype=np.float32))
-            with open(os.path.join(log_path, f'{self.solver_type}_env_info.json'), 'w') as fp:
+            np.save(os.path.join(log_path, f'training_log.npy'), self.log)
+            with open(os.path.join(log_path, f'env_info.json'), 'w') as fp:
                 json.dump(self.env_info_log, fp, indent=2)
+            with open(os.path.join(log_path, f'metrics.json'), 'w') as fp:
+                json.dump(self.metrics, fp, indent=2)
     
     def plot_run(self, log_path='logs/'):
         '''
@@ -81,13 +97,21 @@ class Runner():
         if len(self.log) == 0:
             print('Call Runner.run() before plotting')
         
+        episodes = np.arange(len(self.log))
+        plt.plot(episodes, self.log, label='Reward')
 
-        plt.plot(np.arange(len(self.log)), self.log)
-        plt.xlabel('Epochs')
+        window = max(1, min(50, len(self.log)))
+        kernel = np.ones(window) / window
+        running_avg = np.convolve(self.log, kernel, mode='valid')
+        offset = window - 1
+        plt.plot(episodes[offset:], running_avg, label=f'Running Avg (window={window})', linewidth=2)
+
+        plt.xlabel('Episodes')
         plt.ylabel('Reward')
         plt.title(f'{self.solver_type} Performance')
+        plt.legend()
         os.makedirs(log_path, exist_ok=True)
-        plt.savefig(os.path.join(log_path, f'{self.solver_type}_training_plot.png'))
+        plt.savefig(os.path.join(log_path, f'training_plot.png'))
         plt.close()
     
     def get_policy(self):
@@ -119,23 +143,26 @@ def main():
     Example usage of the Runner class to train a solver in the Radiation Gridworld environment.
     '''
     gridworld_config = {
-        'size': 5,
-        'agent_locs': [[0, 0], [4, 4]],
-        'target_loc': [2, 2],
-        'wall_locs': [],
-        'radiation_locs': [[1, 1]],
-        'radiation_consts': [[1.0, 1.0]],
-        'distance_multiplier': 0.1,
-        'radiation_multiplier': 0.1,
-        'target_reward': 1.0,
-        'transition_prob': 1.0,
-        'collision_penalty': 0.05
+        'size': 10,
+        'agent_locs': [[0, 0], [9, 9]],
+        'target_loc': [5, 5],
+        'wall_locs': [[4, 4], [4, 5], [4, 6], [5, 4], [6, 4], [6, 5], [6, 6]],
+        'radiation_locs': [[2, 2], [7, 7]],
+        'radiation_consts': [[1.0, 1.0], [1.0, 1.0]],
+        'distance_multiplier': 0.02,
+        'radiation_multiplier': 0.8,
+        'target_reward': max(5.0, 0.5 * 10),
+        'transition_prob': 0.9,
+        'collision_penalty': 0.1,
+        'revisit_penalty': 0.2,
+        'progress_bonus': 0.2,
+        'stasis_penalty': 0.1
     }
     solver_config = {
         'type': 'DQN',
         'params': {
-            'num_episodes': 100,
-            'max_steps': 50
+            'num_episodes': 1000,
+            'max_steps': 300
         }
     }
 
@@ -150,6 +177,11 @@ def main():
     print(f'Average Reward: {avg}')
     print(f'Standard Deviation of Reward: {std}')
     runner.plot_run(log_path)
+
+    # To visualize a greedy rollout:
+    from Solvers.visualize_episode import animate_episode
+    policy = runner.solver.create_greedy_policy()
+    animate_episode(runner.env, policy, out_path=os.path.join(log_path, "episode.mp4"), max_steps=50)
 
 if __name__ == '__main__':
     main()
