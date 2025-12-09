@@ -3,6 +3,7 @@ import json
 import os
 import random
 from itertools import product
+import math
 
 import numpy as np
 import torch
@@ -99,7 +100,7 @@ def main(sizes, seed, log_dir, num_agents, num_episodes):
     num_episodes = max(1, num_episodes)
 
     for size in sizes:
-        max_steps_for_size = max(1, size * size)
+        max_steps_for_size = max(1, int(math.ceil(2.5 * size)))
         solver_params = {
             'num_episodes': num_episodes,
             'max_steps': max_steps_for_size,
@@ -152,7 +153,7 @@ if __name__ == "__main__":
         help='The gridworld sizes to test',
         type=int,
         nargs='+',
-        default=[10, 50, 100]
+        default=[10]
     )
     parser.add_argument(
         '--seed',
