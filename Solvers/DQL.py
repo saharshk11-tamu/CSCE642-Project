@@ -142,6 +142,7 @@ class DQN(AbstractSolver):
         obs, _ = self.env.reset()
         state = self._flatten_state(obs)
         self.reward = 0
+        done = False
         for _ in range(self.max_steps):
             actions = self.epsilon_greedy_policy(obs)
             probs, next_obs, rewards, done, _ = self.env.step(actions)
@@ -158,6 +159,13 @@ class DQN(AbstractSolver):
             obs = next_obs
             state = flat_next_state
             if done: break
+        # Apply terminal penalty if episode ended without all agents at target
+        if not done and not np.all(self.env._reached_target):
+            penalty_vec = np.where(self.env._reached_target, 0.0, -self.env._final_miss_penalty)
+            self.reward += float(self.reward_aggregator(penalty_vec))
+            # Add a terminal transition to propagate the penalty
+            self.memorize(state, np.zeros(self.num_agents, dtype=np.int64), penalty_vec, state, True)
+            self.replay()
     
     def create_greedy_policy(self):
         def policy_fn(state):

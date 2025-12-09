@@ -49,6 +49,7 @@ class RadiationGridworld(gym.Env):
             target_reward: float = 1.0,
             transition_prob: float = 1.0,
             collision_penalty: float = 0.1,
+            final_miss_penalty: float | None = None,
             revisit_penalty: float = 0.2,
             progress_bonus: float = 0.2,
             stasis_penalty: float = 0.1,
@@ -97,6 +98,7 @@ class RadiationGridworld(gym.Env):
         self._radiation_multiplier = radiation_multiplier
         self._target_reward = target_reward
         self._collision_penalty = collision_penalty
+        self._final_miss_penalty = final_miss_penalty if final_miss_penalty is not None else target_reward
         self._revisit_penalty = revisit_penalty
         self._progress_bonus = progress_bonus
         self._stasis_penalty = stasis_penalty
@@ -550,6 +552,7 @@ class RadiationGridworld(gym.Env):
             'reached_target': self._reached_target.tolist(),
             'transition_prob': self._transition_prob,
             'collision_penalty': self._collision_penalty,
+            'final_miss_penalty': self._final_miss_penalty,
             'revisit_penalty': self._revisit_penalty,
             'progress_bonus': self._progress_bonus,
             'stasis_penalty': self._stasis_penalty
@@ -581,6 +584,7 @@ class RadiationGridworld(gym.Env):
         self._reached_target = np.array(config.get('reached_target', [False] * self.num_agents), dtype=bool)
         self._transition_prob = config['transition_prob']
         self._collision_penalty = config.get('collision_penalty', 0.0)
+        self._final_miss_penalty = config.get('final_miss_penalty', config.get('target_reward', 1.0))
         self._revisit_penalty = config.get('revisit_penalty', 0.2)
         self._progress_bonus = config.get('progress_bonus', 0.2)
         self._stasis_penalty = config.get('stasis_penalty', 0.1)

@@ -154,6 +154,7 @@ def main():
         'target_reward': max(5.0, 0.5 * 10),
         'transition_prob': 0.9,
         'collision_penalty': 0.1,
+        'final_miss_penalty': max(5.0, 0.5 * 10),
         'revisit_penalty': 0.2,
         'progress_bonus': 0.2,
         'stasis_penalty': 0.1
