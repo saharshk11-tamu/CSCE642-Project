@@ -410,8 +410,8 @@ class RadiationGridworld(gym.Env):
 
             proposed_locations[agent_idx] = proposed
 
-        # Agent-agent collision handling: cannot enter an occupied square.
-        # First, cannot move into any agent's initial position (prevents swaps/overlaps).
+        target_cell = tuple(self._target_location.tolist())
+
         for agent_idx in range(self.num_agents):
             if self._reached_target[agent_idx]:
                 continue
@@ -419,17 +419,20 @@ class RadiationGridworld(gym.Env):
                 if agent_idx == other_idx:
                     continue
                 if np.array_equal(proposed_locations[agent_idx], initial_locations[other_idx]):
+                    if tuple(proposed_locations[agent_idx]) == target_cell:
+                        continue
                     self._collision_count += 1
                     proposed_locations[agent_idx] = initial_locations[agent_idx]
                     collision_flags[agent_idx] = True
                     break
 
-        # Second, if multiple agents propose the same cell, all involved stay put.
         for agent_idx in range(self.num_agents):
             if self._reached_target[agent_idx]:
                 continue
             for other_idx in range(agent_idx + 1, self.num_agents):
                 if np.array_equal(proposed_locations[agent_idx], proposed_locations[other_idx]):
+                    if tuple(proposed_locations[agent_idx]) == target_cell:
+                        continue
                     if not np.array_equal(proposed_locations[agent_idx], initial_locations[agent_idx]):
                         collision_flags[agent_idx] = True
                         proposed_locations[agent_idx] = initial_locations[agent_idx]
@@ -439,6 +442,7 @@ class RadiationGridworld(gym.Env):
                     self._collision_count += 1
 
         # Apply moves and compute rewards
+        prev_reached = self._reached_target.copy()
         prev_distances = np.linalg.norm(initial_locations - self._target_location, axis=1)
         individual_rewards = np.zeros(self.num_agents, dtype=np.float32)
         for agent_idx in range(self.num_agents):
@@ -455,18 +459,18 @@ class RadiationGridworld(gym.Env):
 
             cell_key = (int(new_location[0]), int(new_location[1]))
 
-            if reached:
+            if reached and not prev_reached[agent_idx]:
                 reward = self._target_reward
+            elif prev_reached[agent_idx]:
+                reward = 0.0
             else:
                 distance = np.linalg.norm(new_location - self._target_location)
                 reward = -self._distance_multiplier * distance
                 reward += -self._radiation_multiplier * prospective_cum
-                # Reward progress toward target; penalize stasis
                 dist_delta = prev_distances[agent_idx] - distance
                 reward += self._progress_bonus * dist_delta
                 if np.array_equal(new_location, initial_locations[agent_idx]):
                     reward -= self._stasis_penalty
-                # Penalize revisiting already visited cells (discourages oscillation/collisions)
                 if cell_key in self._visited_cells[agent_idx]:
                     reward -= self._revisit_penalty
                 if collision_flags[agent_idx]:
@@ -475,7 +479,6 @@ class RadiationGridworld(gym.Env):
             individual_rewards[agent_idx] = reward
             self._visited_cells[agent_idx].add(cell_key)
 
-        # Use only per-agent rewards to avoid coupling agents via a shared group term
         rewards = individual_rewards
 
         terminated = bool(np.all(self._reached_target))
