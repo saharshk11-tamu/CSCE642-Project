@@ -144,26 +144,26 @@ def main():
     '''
     gridworld_config = {
         'size': 10,
-        'agent_locs': [[0, 0], [9, 9]],
+        'agent_locs': [[0, 0], [9, 9], [9, 3]],
         'target_loc': [5, 5],
-        'wall_locs': [[4, 4], [4, 5], [4, 6], [5, 4], [6, 4], [6, 5], [6, 6]],
+        'wall_locs': [[5, 4], [6, 6]],
         'radiation_locs': [[2, 2], [7, 7]],
         'radiation_consts': [[1.0, 1.0], [1.0, 1.0]],
-        'distance_multiplier': 0.02,
-        'radiation_multiplier': 0.8,
-        'target_reward': max(5.0, 0.5 * 10),
+        'distance_multiplier': 0.1,
+        'radiation_multiplier': 0.2,
+        'target_reward': 20.0,
         'transition_prob': 0.9,
         'collision_penalty': 0.1,
-        'final_miss_penalty': max(5.0, 0.5 * 10),
-        'revisit_penalty': 0.2,
-        'progress_bonus': 0.2,
-        'stasis_penalty': 0.1
+        'final_miss_penalty': 20.0,
+        'revisit_penalty': 0.3,
+        'progress_bonus': 0.5,
+        'stasis_penalty': 0.3
     }
     solver_config = {
         'type': 'DQN',
         'params': {
             'num_episodes': 1000,
-            'max_steps': 300
+            'max_steps': 100
         }
     }
 
