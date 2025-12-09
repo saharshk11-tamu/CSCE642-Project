@@ -44,7 +44,7 @@ class DQN(AbstractSolver):
             self,
             env,
             epsilon = 0.1,
-            gamma = 0.1,
+            gamma = 0.99,
             num_episodes = 100,
             max_steps = 100,
             layers=[64, 64],

@@ -42,7 +42,7 @@ class ActorCriticNetwork(nn.Module):
 
 
 class A2C(AbstractSolver):
-    def __init__(self, env, epsilon=0.1, gamma=0.1, num_episodes=100, max_steps=100, layers=[128, 128], lr=1e-3):
+    def __init__(self, env, epsilon=0.1, gamma=0.99, num_episodes=100, max_steps=100, layers=[128, 128], lr=1e-3):
         super().__init__(env, epsilon, gamma, num_episodes, max_steps)
         self.num_agents = env.num_agents
         self.state_size = self._calc_state_size()
@@ -109,7 +109,7 @@ class A2C(AbstractSolver):
     def train_episode(self):
         obs, _ = self.env.reset()
         self.reward = 0.0
-
+        done = False
         for _ in range(self.max_steps):
             actions, log_prob_sum, value = self.select_action(obs)
             _, next_obs, rewards, done, _ = self.env.step(actions)
@@ -125,3 +125,13 @@ class A2C(AbstractSolver):
             obs = next_obs
             if done:
                 break
+        # If episode ended without all agents at target, apply terminal penalty
+        if not done and not np.all(self.env._reached_target):
+            penalty_vec = np.where(self.env._reached_target, 0.0, -self.env._final_miss_penalty)
+            penalty_scalar = float(self.reward_aggregator(penalty_vec))
+            self.reward += penalty_scalar
+            flat_state = self._flatten_state(obs)
+            _, value = self.actor_critic(torch.as_tensor(flat_state, dtype=torch.float32))
+            advantage = penalty_scalar - value
+            # No associated action log-prob for this synthetic terminal penalty
+            self.update_actor_critic(advantage, torch.tensor(0.0))

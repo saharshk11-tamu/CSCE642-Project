@@ -15,7 +15,7 @@ class AbstractSolver(ABC):
             self,
             env: RadiationGridworld,
             epsilon: float = 0.1,
-            gamma: float = 0.1,
+            gamma: float = 0.99,
             num_episodes: int = 100,
             max_steps: int = 100,
             reward_aggregator: Callable[[np.ndarray], float] | None = None

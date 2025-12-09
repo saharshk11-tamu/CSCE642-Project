@@ -42,7 +42,7 @@ class PolicyNet(nn.Module):
 
 
 class Reinforce(AbstractSolver):
-    def __init__(self, env, epsilon=0.1, gamma=0.1, num_episodes=100, max_steps=100, layers=[128, 128], lr=1e-3):
+    def __init__(self, env, epsilon=0.1, gamma=0.99, num_episodes=100, max_steps=100, layers=[128, 128], lr=1e-3):
         super().__init__(env, epsilon, gamma, num_episodes, max_steps)
         self.num_agents = env.num_agents
         self.state_size = self._calc_state_size()
@@ -123,6 +123,7 @@ class Reinforce(AbstractSolver):
         rewards = []
         log_prob_sums = []
         baselines = []
+        done = False
         for _ in range(self.max_steps):
             actions, log_prob_sum, baseline = self.select_action(obs)
             _, next_obs, rewards_vec, done, _ = self.env.step(actions)
@@ -134,5 +135,17 @@ class Reinforce(AbstractSolver):
 
             obs = next_obs
             if done: break
+
+        # If episode ended without all agents at target, apply terminal penalty
+        if not done and not np.all(self.env._reached_target):
+            penalty_vec = np.where(self.env._reached_target, 0.0, -self.env._final_miss_penalty)
+            penalty_scalar = float(self.reward_aggregator(penalty_vec))
+            self.reward += penalty_scalar
+            rewards.append(penalty_scalar)
+            # Use baseline from current state; no action taken so log_prob is zero
+            flat_state = self._flatten_state(obs)
+            _, baseline = self.model(torch.as_tensor(flat_state, dtype=torch.float32))
+            log_prob_sums.append(torch.tensor(0.0))
+            baselines.append(baseline.squeeze(0))
         
         self.update_model(rewards, log_prob_sums, baselines)
