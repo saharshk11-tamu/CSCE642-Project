@@ -48,7 +48,10 @@ class RadiationGridworld(gym.Env):
             radiation_multiplier: float = 0.1,
             target_reward: float = 1.0,
             transition_prob: float = 1.0,
-            collision_penalty: float = 0.05,
+            collision_penalty: float = 0.1,
+            revisit_penalty: float = 0.2,
+            progress_bonus: float = 0.2,
+            stasis_penalty: float = 0.1,
             wall_attenuation_coeff: float = 0.5,   # μ
             wall_thickness: float = 1.0            # “thickness” per wall cell
         ):
@@ -94,6 +97,11 @@ class RadiationGridworld(gym.Env):
         self._radiation_multiplier = radiation_multiplier
         self._target_reward = target_reward
         self._collision_penalty = collision_penalty
+        self._revisit_penalty = revisit_penalty
+        self._progress_bonus = progress_bonus
+        self._stasis_penalty = stasis_penalty
+        self._collision_count = 0
+        self._visited_cells = [set() for _ in range(self.num_agents)]
 
         self.observation_space = gym.spaces.Dict({
             'positions': gym.spaces.Box(
@@ -249,7 +257,8 @@ class RadiationGridworld(gym.Env):
             'distances': distances,
             'current_doses': np.array([self._radiation_vals[tuple(loc)] for loc in self._agent_locations], dtype=np.float32),
             'cumulative_doses': np.array(self._cumulative_doses, dtype=np.float32),
-            'reached_target': np.array(self._reached_target, dtype=bool)
+            'reached_target': np.array(self._reached_target, dtype=bool),
+            'collision_count': int(self._collision_count)
         }
     
     def reset(self, *, seed=None, options=None):
@@ -263,6 +272,8 @@ class RadiationGridworld(gym.Env):
 
         self._agent_locations = np.array(self._agent_start_locations, dtype=np.int32)
         self._curr_steps = 0
+        self._collision_count = 0
+        self._visited_cells = [set() for _ in range(self.num_agents)]
         self._radiation_doses = np.array(
             [self._radiation_vals[tuple(loc)] for loc in self._agent_locations],
             dtype=np.float32
@@ -345,38 +356,125 @@ class RadiationGridworld(gym.Env):
         if actions.shape != (self.num_agents,):
             raise ValueError(f'actions must have shape ({self.num_agents},), got {actions.shape}')
 
-        transitions = self.get_transition(self._agent_locations, actions)
-
+        initial_locations = np.array(self._agent_locations, copy=True)
         chosen_probs = np.zeros(self.num_agents, dtype=np.float32)
-        individual_rewards = np.zeros(self.num_agents, dtype=np.float32)
+        collision_flags = np.zeros(self.num_agents, dtype=bool)
 
-        for agent_idx, agent_transitions in enumerate(transitions):
+        # Determine chosen actions (respecting stochastic transitions)
+        chosen_actions = np.zeros(self.num_agents, dtype=np.int32)
+        for agent_idx in range(self.num_agents):
+            if self._reached_target[agent_idx]:
+                chosen_actions[agent_idx] = -1  # dummy
+                chosen_probs[agent_idx] = 1.0
+                continue
             if np.isclose(self._transition_prob, 1.0):
-                chosen_action = actions[agent_idx]
+                chosen = actions[agent_idx]
+                chosen_probs[agent_idx] = 1.0
             else:
-                action_ids = np.array(list(agent_transitions.keys()))
-                probs = np.array([agent_transitions[a][0] for a in action_ids], dtype=np.float64)
+                action_ids = np.array([0, 1, 2, 3], dtype=np.int32)
+                probs = np.full_like(action_ids, (1 - self._transition_prob) / 3, dtype=np.float64)
+                probs[actions[agent_idx]] = self._transition_prob
                 probs /= probs.sum()
-                chosen_action = np.random.choice(action_ids, p=probs)
+                chosen = np.random.choice(action_ids, p=probs)
+                chosen_probs[agent_idx] = float(probs[chosen == action_ids][0])
+            chosen_actions[agent_idx] = chosen
 
-            prob, new_location, reward, reached = agent_transitions[chosen_action]
+        # Proposed moves before resolving collisions
+        proposed_locations = np.array(initial_locations, copy=True)
+        for agent_idx in range(self.num_agents):
+            if self._reached_target[agent_idx]:
+                continue
+
+            direction = self._action_to_direction[chosen_actions[agent_idx]]
+            raw_proposed = initial_locations[agent_idx] + direction
+
+            # Boundary check
+            out_of_bounds = np.any((raw_proposed < 0) | (raw_proposed >= self.size))
+
+            if out_of_bounds:
+                proposed_locations[agent_idx] = initial_locations[agent_idx]
+                collision_flags[agent_idx] = True
+                self._collision_count += 1
+                continue
+
+            proposed = np.array(raw_proposed, copy=True)
+
+            # Wall check
+            if (int(proposed[0]), int(proposed[1])) in self._wall_set:
+                proposed_locations[agent_idx] = initial_locations[agent_idx]
+                collision_flags[agent_idx] = True
+                self._collision_count += 1
+                continue
+
+            proposed_locations[agent_idx] = proposed
+
+        # Agent-agent collision handling: cannot enter an occupied square.
+        # First, cannot move into any agent's initial position (prevents swaps/overlaps).
+        for agent_idx in range(self.num_agents):
+            if self._reached_target[agent_idx]:
+                continue
+            for other_idx in range(self.num_agents):
+                if agent_idx == other_idx:
+                    continue
+                if np.array_equal(proposed_locations[agent_idx], initial_locations[other_idx]):
+                    self._collision_count += 1
+                    proposed_locations[agent_idx] = initial_locations[agent_idx]
+                    collision_flags[agent_idx] = True
+                    break
+
+        # Second, if multiple agents propose the same cell, all involved stay put.
+        for agent_idx in range(self.num_agents):
+            if self._reached_target[agent_idx]:
+                continue
+            for other_idx in range(agent_idx + 1, self.num_agents):
+                if np.array_equal(proposed_locations[agent_idx], proposed_locations[other_idx]):
+                    if not np.array_equal(proposed_locations[agent_idx], initial_locations[agent_idx]):
+                        collision_flags[agent_idx] = True
+                        proposed_locations[agent_idx] = initial_locations[agent_idx]
+                    if not np.array_equal(proposed_locations[other_idx], initial_locations[other_idx]):
+                        collision_flags[other_idx] = True
+                        proposed_locations[other_idx] = initial_locations[other_idx]
+                    self._collision_count += 1
+
+        # Apply moves and compute rewards
+        prev_distances = np.linalg.norm(initial_locations - self._target_location, axis=1)
+        individual_rewards = np.zeros(self.num_agents, dtype=np.float32)
+        for agent_idx in range(self.num_agents):
+            new_location = proposed_locations[agent_idx]
             rad_dose = self._radiation_vals[tuple(new_location)]
+            prospective_cum = self._cumulative_doses[agent_idx] + rad_dose
 
             self._agent_locations[agent_idx] = new_location
             self._radiation_doses[agent_idx] = rad_dose
-            self._cumulative_doses[agent_idx] += rad_dose
+            self._cumulative_doses[agent_idx] = prospective_cum
+
+            reached = np.array_equal(new_location, self._target_location)
             self._reached_target[agent_idx] = self._reached_target[agent_idx] or reached
 
-            chosen_probs[agent_idx] = prob
+            cell_key = (int(new_location[0]), int(new_location[1]))
+
+            if reached:
+                reward = self._target_reward
+            else:
+                distance = np.linalg.norm(new_location - self._target_location)
+                reward = -self._distance_multiplier * distance
+                reward += -self._radiation_multiplier * prospective_cum
+                # Reward progress toward target; penalize stasis
+                dist_delta = prev_distances[agent_idx] - distance
+                reward += self._progress_bonus * dist_delta
+                if np.array_equal(new_location, initial_locations[agent_idx]):
+                    reward -= self._stasis_penalty
+                # Penalize revisiting already visited cells (discourages oscillation/collisions)
+                if cell_key in self._visited_cells[agent_idx]:
+                    reward -= self._revisit_penalty
+                if collision_flags[agent_idx]:
+                    reward -= self._collision_penalty
+
             individual_rewards[agent_idx] = reward
+            self._visited_cells[agent_idx].add(cell_key)
 
-        distances = np.linalg.norm(self._agent_locations - self._target_location, axis=1)
-        group_reward = -self._distance_multiplier * np.mean(distances)
-        group_reward += -self._radiation_multiplier * np.mean(self._cumulative_doses)
-        if np.all(self._reached_target):
-            group_reward += self._target_reward
-
-        rewards = individual_rewards + group_reward
+        # Use only per-agent rewards to avoid coupling agents via a shared group term
+        rewards = individual_rewards
 
         terminated = bool(np.all(self._reached_target))
         self._curr_steps += 1
@@ -451,7 +549,10 @@ class RadiationGridworld(gym.Env):
             'cumulative_doses': self._cumulative_doses.tolist(),
             'reached_target': self._reached_target.tolist(),
             'transition_prob': self._transition_prob,
-            'collision_penalty': self._collision_penalty
+            'collision_penalty': self._collision_penalty,
+            'revisit_penalty': self._revisit_penalty,
+            'progress_bonus': self._progress_bonus,
+            'stasis_penalty': self._stasis_penalty
         }
 
         with open(path, 'w') as file:
@@ -479,7 +580,12 @@ class RadiationGridworld(gym.Env):
         self._cumulative_doses = np.array(config.get('cumulative_doses', self._radiation_doses.tolist()), dtype=np.float32)
         self._reached_target = np.array(config.get('reached_target', [False] * self.num_agents), dtype=bool)
         self._transition_prob = config['transition_prob']
-        self._collision_penalty = config['collision_penalty']
+        self._collision_penalty = config.get('collision_penalty', 0.0)
+        self._revisit_penalty = config.get('revisit_penalty', 0.2)
+        self._progress_bonus = config.get('progress_bonus', 0.2)
+        self._stasis_penalty = config.get('stasis_penalty', 0.1)
+        self._collision_count = 0
+        self._visited_cells = [set() for _ in range(self.num_agents)]
 
         self.observation_space = gym.spaces.Dict({
             'positions': gym.spaces.Box(

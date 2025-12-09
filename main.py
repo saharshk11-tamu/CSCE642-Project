@@ -10,6 +10,7 @@ import torch
 from tqdm import tqdm
 
 from Solvers.runner import Runner
+from Solvers.visualize_episode import animate_episode
 
 WALL_DENSITIES = {
     'low': 0.05,
@@ -80,7 +81,10 @@ def build_grid_config(size: int, num_agents: int, wall_level: str, rad_level: st
         'radiation_multiplier': 0.1,
         'target_reward': max(1.0, TARGET_REWARD_PER_UNIT * size),
         'transition_prob': 0.9,
-        'collision_penalty': 0.05,
+        'collision_penalty': 0.1,
+        'revisit_penalty': 0.2,
+        'progress_bonus': 0.2,
+        'stasis_penalty': 0.1,
     }
     return grid_config
 
@@ -97,7 +101,7 @@ def main(sizes, seed, log_dir, num_agents, num_episodes):
     num_episodes = max(1, num_episodes)
 
     for size in sizes:
-        max_steps_for_size = max(1, math.ceil(2.5 * size))
+        max_steps_for_size = max(1, size * size)
         solver_params = {
             'num_episodes': num_episodes,
             'max_steps': max_steps_for_size,
@@ -136,6 +140,7 @@ def main(sizes, seed, log_dir, num_agents, num_episodes):
                     runner.env.render(render_mode='radiation_map', dir=os.path.join(grid_dir, "radiation_map.png"))
                 runner.run(verbose=False, log_path=solver_dir)
                 runner.plot_run(log_path=solver_dir)
+                animate_episode(runner.env, runner.solver.create_greedy_policy(), out_path=os.path.join(solver_dir, "episode.mp4"), max_steps=max_steps_for_size)
 
 
 if __name__ == "__main__":
@@ -149,7 +154,7 @@ if __name__ == "__main__":
         help='The gridworld sizes to test',
         type=int,
         nargs='+',
-        default=[5, 10, 50, 100]
+        default=[10, 50, 100]
     )
     parser.add_argument(
         '--seed',
