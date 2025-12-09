@@ -75,14 +75,14 @@ def build_grid_config(size: int, num_agents: int, wall_level: str, rad_level: st
         'wall_locs': wall_locs,
         'radiation_locs': rad_sources,
         'radiation_consts': rad_consts,
-        'distance_multiplier': 0.02,
-        'radiation_multiplier': 0.8,
-        'target_reward': max(5.0, 0.5 * size),
+        'distance_multiplier': 0.1,
+        'radiation_multiplier': 0.2,
+        'target_reward': max(5.0, 2.0 * size),
         'transition_prob': 0.9,
         'collision_penalty': 0.1,
-        'revisit_penalty': 0.2,
-        'progress_bonus': 0.2,
-        'stasis_penalty': 0.1,
+        'revisit_penalty': 0.3,
+        'progress_bonus': 0.5,
+        'stasis_penalty': 0.3,
     }
     return grid_config
 
