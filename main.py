@@ -3,7 +3,6 @@ import json
 import os
 import random
 from itertools import product
-import math
 
 import numpy as np
 import torch
@@ -46,7 +45,6 @@ def build_grid_config(size: int, num_agents: int, wall_level: str, rad_level: st
     """Create a randomized gridworld configuration with controllable density and strength ranges."""
     target_loc = [size - 1, size - 1]
     forbidden = set()
-    # Avoid target unless the grid is 1x1; otherwise allow the only available cell.
     if size > 1:
         forbidden.add(tuple(target_loc))
 
